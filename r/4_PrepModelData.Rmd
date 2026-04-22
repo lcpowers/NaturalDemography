@@ -72,6 +72,19 @@ nflrs_mod_data_scaled <- repro_mod_data %>%
   na.omit() 
 ```
 
+# set factor levels
+```{r}
+surv_mod_data_scaled$aspect.cat <- relevel(as.factor(surv_mod_data_scaled$aspect.cat), ref = "top")
+growth_mod_data_scaled$aspect.cat <- relevel(as.factor(growth_mod_data_scaled$aspect.cat), ref = "top")
+repro_mod_data_scaled$aspect.cat <- relevel(as.factor(repro_mod_data_scaled$aspect.cat), ref = "top")
+nflrs_mod_data_scaled$aspect.cat <- relevel(as.factor(nflrs_mod_data_scaled$aspect.cat), ref = "top")
+
+surv_mod_data_scaled$site <- relevel(as.factor(surv_mod_data_scaled$site), ref = "niwot")
+growth_mod_data_scaled$site <- relevel(as.factor(growth_mod_data_scaled$site), ref = "niwot")
+repro_mod_data_scaled$site <- relevel(as.factor(repro_mod_data_scaled$site), ref = "niwot")
+nflrs_mod_data_scaled$site <- relevel(as.factor(nflrs_mod_data_scaled$site), ref = "niwot")
+```
+
 ```{r write_data}
 mod_data <- list(
   surv_mod_data = surv_mod_data,

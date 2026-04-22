@@ -25,66 +25,55 @@ clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
 
 microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv")
 mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt")]
-
-surv_mod_data_scaled$aspect.cat <- relevel(as.factor(surv_mod_data_scaled$aspect.cat), ref = "top")
-growth_mod_data_scaled$aspect.cat <- relevel(as.factor(growth_mod_data_scaled$aspect.cat), ref = "top")
-repro_mod_data_scaled$aspect.cat <- relevel(as.factor(repro_mod_data_scaled$aspect.cat), ref = "top")
-nflrs_mod_data_scaled$aspect.cat <- relevel(as.factor(nflrs_mod_data_scaled$aspect.cat), ref = "top")
-
-surv_mod_data_scaled$site <- relevel(as.factor(surv_mod_data_scaled$site), ref = "niwot")
-growth_mod_data_scaled$site <- relevel(as.factor(growth_mod_data_scaled$site), ref = "niwot")
-repro_mod_data_scaled$site <- relevel(as.factor(repro_mod_data_scaled$site), ref = "niwot")
-nflrs_mod_data_scaled$site <- relevel(as.factor(nflrs_mod_data_scaled$site), ref = "niwot")
 ```
-
-# --------------
-# Site and year only
-```{r pop-year-models}
-surv_popyr_formula <- as.formula("surv ~ log_size_t0*(year + site.pop + gs_meanT_mean + I(gs_meanT_mean^2)) + year*site.pop")
-surv_popyr_mod <- glm(surv_popyr_formula, family = binomial, data = surv_mod_data_scaled)
-siteyear_dredge <- dredge(surv_popyr_mod,subset = dc("gs_meanT_mean","I(gs_meanT_mean"))
-
-growth_popyr_formula <- as.formula("growth ~ log_size_t0*(year + site.pop) + year*site.pop")
-growth_popyr_mod <- lmer(growth_clim_formula, data = growth_mod_data_scaled, REML = F)
-
-repro_popyr_formula <- as.formula(paste(c("flowered ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
-repro_popyr_mod <- glmer(repro_clim_formula, data = repro_mod_data_scaled, family = binomial, nAGQ = 0)
-
-nflrs_popyr_formula <- as.formula(paste(c("total_flrs ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop) + (1|obs_id)"), collapse = " "))
-nflrs_popyr_mod <- glmer(nflrs_clim_formula, data = nflrs_mod_data_scaled, family = poisson, nAGQ = 0)
-```
-
 
 # --------------
 # Clim-only models
 
 ```{r climOnly_global_models}
-surv_clim_formula <- as.formula(paste(c("surv ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+surv_clim_formula <- as.formula("surv ~ log_size_t0*(pop_est + pop_nrt + pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+                                gs_snow_days + I(gs_snow_days^2) + gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) 
+                                + (1|pop.set.year)")
 surv_clim_mod <- glmer(surv_clim_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
 
-growth_clim_formula <- as.formula(paste(c("growth ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+growth_clim_formula <- as.formula("growth ~ log_size_t0*(pop_est + pop_nrt + pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+                                gs_snow_days + I(gs_snow_days^2) + gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) 
+                                + (1|pop.set.year)")
 growth_clim_mod <- lmer(growth_clim_formula, data = growth_mod_data_scaled, REML = F)
 
-repro_clim_formula <- as.formula(paste(c("flowered ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+repro_clim_formula <- as.formula("flowered ~ log_size_t0*(pop_est + pop_nrt + pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+                                gs_snow_days + I(gs_snow_days^2) + gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) 
+                                + (1|pop.set.year)")
 repro_clim_mod <- glmer(repro_clim_formula, data = repro_mod_data_scaled, family = binomial, nAGQ = 0)
 
-nflrs_clim_formula <- as.formula(paste(c("total_flrs ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop) + (1|obs_id)"), collapse = " "))
+nflrs_clim_formula <- as.formula("total_flrs ~ log_size_t0*(pop_est + pop_nrt + pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+                                gs_snow_days + I(gs_snow_days^2) + gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) 
+                                + (1|pop.set.year)")
 nflrs_clim_mod <- glmer(nflrs_clim_formula, data = nflrs_mod_data_scaled, family = poisson, nAGQ = 0)
 ```
 
 
+
 ```{r climOnly_dredge}
+clim_dredge_subset <- expression(
+  !(ann_snow_days & win_meanT_mean) &
+  !(ann_snow_days & gs_snow_days) &
+  dc(ann_snow_days, `I(ann_snow_days^2)`) &
+  dc(gs_snow_days, `I(gs_snow_days^2)`) &
+  dc(gs_meanT_mean, `I(gs_meanT_mean^2)`) &
+  dc(gs_meanT_range, `I(gs_meanT_range^2)`) &
+  dc(win_meanT_mean, `I(win_meanT_mean^2)`) &
+  dc(win_meanT_range, `I(win_meanT_range^2)`)
+)
+
 # Note: must not name the cluster 'cl' — MuMIn uses cl <- match.call() internally,
 # which causes a name collision that silently breaks parallel dispatch.
-clust <- makeCluster(40, type = "FORK")
+clust <- makeCluster(10, type = "FORK")
 
-dredge_surv_climOnly <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
-
-dredge_growth_climOnly <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
-
-dredge_repro_climOnly <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
-
-dredge_nflrs_climOnly <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+dredge_surv_climOnly <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
+dredge_growth_climOnly <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
+dredge_repro_climOnly <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
+dredge_nflrs_climOnly <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
 
 stopCluster(clust)
 ```
