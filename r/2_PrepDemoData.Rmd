@@ -1,0 +1,572 @@
+---
+title: "2_PrepDemogData"
+output: html_document
+date: "2026-04-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ 
+```{r}
+rm(list=ls())
+library(readxl)
+library(tidyverse)
+library(conflicted)
+conflicts_prefer(dplyr::lag)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::select)
+```
+
+# --------------
+# Area and survival data
+# --------------
+# Guanella
+```{r prep_guanella_areas}
+
+gp_size <- read_xlsx("raw_data/demog/Guanella/gp_size.xlsx") %>% 
+  dplyr::select(-notes) %>% 
+  pivot_longer(cols = !c(plot,tr,id,tp,x,y)) %>% 
+  separate(name,into = c("var","year")) %>% 
+  mutate(year = as.numeric(paste0("20",year))) %>% 
+  pivot_wider(names_from = var,values_from = value) %>% 
+  filter(!is.na(A1)) %>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>% 
+  rename(plantID=id,pop=plot)
+
+gp_onepc <- filter(gp_size,!str_detect(A1,",")) %>% 
+  mutate(A1 = as.numeric(A1),
+         A2 = as.numeric(A2),
+         PM = as.numeric(PM),
+         area = (pi * (A1/2) * (A2/2))*(1-PM/100))
+
+gp_mltplpcs <- filter(gp_size,str_detect(A1,",")) %>% 
+  separate(A1,into = paste0("A1.",1:4),remove = F) %>% 
+  separate(A2,into = paste0("A2.",1:4),remove = F) %>% 
+  separate(PM,into = paste0("PM.",1:4),remove = F)
+
+gp_mltplpcs2 <- NULL
+for(i in 1:nrow(gp_mltplpcs)){
+  
+  row.i <- gp_mltplpcs[i,]
+  
+  A1 <- unlist(row.i[paste0("A1.", 1:4)]) %>% as.numeric() %>% na.omit()
+  A2 <- unlist(row.i[paste0("A2.", 1:4)]) %>% as.numeric() %>% na.omit()
+  pm   <- unlist(row.i[paste0("PM.", 1:4)]) %>% as.numeric() %>% na.omit()
+  
+  if(length(A1)!=length(A2)){
+    
+    cat("Missing pc size measurements for plant",row.i$plantID,"\n")
+    
+  }
+  
+  if(length(pm)<=length(A1)){
+    
+    pm <- c(pm, rep(0, length(A1) - length(pm)))
+    
+  }
+  
+  total_area <- sum(pi * (A1 / 2) * (A2 / 2) * (1 - pm / 100), na.rm = TRUE)
+  
+  gp_mltplpcs2 <- rbind(gp_mltplpcs2, data.frame(
+    pop = row.i$pop,
+    tr = row.i$tr,
+    plantID   = row.i$plantID,
+    tp = row.i$tp,
+    x = row.i$x,
+    y = row.i$y,
+    A1 = row.i$A1,
+    A2 = row.i$A2,
+    PM = row.i$PM,
+    year = row.i$year,
+    area = total_area
+  ))
+  
+}
+
+gp_all_sizes <- rbind(gp_onepc,gp_mltplpcs2) %>% 
+  mutate(log_size = ifelse(area > 0, log(area), NA)) %>% 
+  mutate(surv = ifelse(area>0,1,0))
+rm(gp_mltplpcs,gp_mltplpcs2,gp_onepc)
+
+# If surv = 0, then that means that plant did not survive from the last census to this census. 
+# I want to remove rows that indicate the second recording of a plant not surviving, i.e, the second time surv==0
+
+gp_surv <- gp_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  arrange(pop,plantID,year) %>%
+  group_by(pop,plantID) %>%
+  filter(cumsum(surv==0)<=1) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup() %>% 
+  filter(!is.na(log_size_t0))
+
+gp_growth <- gp_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  filter(surv == 1) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size),
+         growth = log_size - lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(growth))
+```
+
+# Niwot
+```{r prep_niwot_areas}
+nr_size <- read_xlsx("raw_data/demog/Niwot/nr_size.xlsx") %>% 
+  dplyr::select(-notes) %>% 
+  mutate(PM.22 = as.character(PM.22)) %>% 
+  pivot_longer(cols = !c(plot,tr,id,tp,x,y)) %>% 
+  separate(name,into = c("var","year")) %>% 
+  mutate(year = as.numeric(paste0("20",year))) %>% 
+  pivot_wider(names_from = var,values_from = value) %>% 
+  filter(!is.na(A1))%>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>% 
+  rename(plantID=id,pop=plot)
+
+
+nr_onepc <- filter(nr_size,!str_detect(A1,",")) %>% 
+  mutate(A1 = as.numeric(A1),
+         A2 = as.numeric(A2),
+         PM = as.numeric(PM),
+         area = (pi * (A1/2) * (A2/2))*(1-PM/100)  )
+
+nr_mltplpcs <- filter(nr_size,str_detect(A1,",")) %>% 
+  separate(A1,into = paste0("A1.",1:3),remove = F) %>% 
+  separate(A2,into = paste0("A2.",1:3),remove = F) %>% 
+  separate(PM,into = paste0("PM.",1:3),remove = F)
+
+nr_mltplpcs2 <- NULL
+for(i in 1:nrow(nr_mltplpcs)){
+  
+  row.i <- nr_mltplpcs[i,]
+  
+  A1 <- unlist(row.i[paste0("A1.", 1:3)]) %>% as.numeric() %>% na.omit()
+  A2 <- unlist(row.i[paste0("A2.", 1:3)]) %>% as.numeric() %>% na.omit()
+  pm <- unlist(row.i[paste0("PM.", 1:3)]) %>% as.numeric() %>% na.omit()
+
+  if(length(A1)!=length(A2)){
+    
+    cat("Missing pc size measurements for plant",row.i$plantID,"\n")
+    
+  }
+  
+  if(length(pm)<=length(A1)){
+    
+    pm <- c(pm, rep(0, length(A1) - length(pm)))
+    
+  }
+  
+  total_area <- sum(pi * (A1 / 2) * (A2 / 2) * (1 - pm / 100), na.rm = TRUE)
+  
+  nr_mltplpcs2 <- rbind(nr_mltplpcs2, data.frame(
+    pop = row.i$pop,
+    tr = row.i$tr,
+    plantID   = row.i$plantID,
+    tp = row.i$tp,
+    x = row.i$x,
+    y = row.i$y,
+    A1 = row.i$A1,
+    A2 = row.i$A2,
+    PM = row.i$PM,
+    year = row.i$year,
+    area = total_area
+  ))
+  
+}
+
+nr_all_sizes <- rbind(nr_onepc,nr_mltplpcs2) %>%
+  mutate(plantID = as.character(plantID),
+         log_size = ifelse(area > 0, log(area), NA),
+         surv = ifelse(area>0,1,0))
+rm(nr_mltplpcs,nr_mltplpcs2,nr_onepc)
+
+nr_surv <- nr_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  arrange(pop,plantID,year) %>%
+  group_by(pop,plantID) %>%
+  filter(cumsum(surv==0)<=1) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup() %>% 
+  filter(!is.na(log_size_t0))
+
+nr_growth <- nr_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  filter(surv == 1) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size),
+         growth = log_size - lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(growth))
+```
+
+# Jones
+```{r prep_jones_areas}
+jp_size <- read_xlsx("raw_data/demog/Jones/jp_size.xlsx") %>% 
+  dplyr::select(-notes) %>% 
+  mutate(PM.23 = as.character(PM.23),
+         PM.24 = as.character(PM.24)) %>% 
+  pivot_longer(cols = !c(plot,tr,id,tp,x,y)) %>% 
+  separate(name,into = c("var","year")) %>% 
+  mutate(year = as.numeric(paste0("20",year))) %>% 
+  pivot_wider(names_from = var,values_from = value) %>% 
+  filter(!is.na(A1)) %>% 
+  mutate(plot=
+    case_when(plot=="N-east" ~ "NorthEast",
+              plot=="S-east" ~ "SouthEast",
+              plot=="T-east" ~ "TopEast",
+              plot=="N-west" ~ "NorthWest",
+              plot=="T-west" ~ "TopWest",
+              plot=="S-west" ~ "SouthWest")
+  ) %>% 
+  rename(plantID=id,pop=plot)
+
+jp_onepc <- filter(jp_size,!str_detect(A1,",")) %>% 
+  mutate(A1 = as.numeric(A1),
+         A2 = as.numeric(A2),
+         PM = as.numeric(PM),
+         area = (pi * (A1/2) * (A2/2))*(1-PM/100)  )
+
+jp_mltplpcs <- filter(jp_size,str_detect(A1,",")) %>% 
+  separate(A1,into = paste0("A1.",1:3),remove = F) %>% 
+  separate(A2,into = paste0("A2.",1:3),remove = F) %>% 
+  separate(PM,into = paste0("PM.",1:3),remove = F)
+
+jp_mltplpcs2 <- NULL
+for(i in 1:nrow(jp_mltplpcs)){
+  
+  row.i <- jp_mltplpcs[i,]
+  
+  A1 <- unlist(row.i[paste0("A1.", 1:3)]) %>% as.numeric() %>% na.omit()
+  A2 <- unlist(row.i[paste0("A2.", 1:3)]) %>% as.numeric() %>% na.omit()
+  pm <- unlist(row.i[paste0("PM.", 1:3)]) %>% as.numeric() %>% na.omit()
+
+  if(length(A1)!=length(A2)){
+    
+    cat("Missing pc size measurements for plant",row.i$plantID,"\n")
+    
+  }
+  
+  if(length(pm)<=length(A1)){
+    
+    pm <- c(pm, rep(0, length(A1) - length(pm)))
+    
+  }
+  
+  total_area <- sum(pi * (A1 / 2) * (A2 / 2) * (1 - pm / 100), na.rm = TRUE)
+  
+  jp_mltplpcs2 <- rbind(jp_mltplpcs2, data.frame(
+    pop = row.i$pop,
+    tr = row.i$tr,
+    plantID   = row.i$plantID,
+    tp = row.i$tp,
+    x = row.i$x,
+    y = row.i$y,
+    A1 = row.i$A1,
+    A2 = row.i$A2,
+    PM = row.i$PM,
+    year = row.i$year,
+    area = total_area
+  ))
+  rm(A1,A2,pm,total_area)
+}
+
+jp_all_sizes <- rbind(jp_onepc,jp_mltplpcs2) %>%
+  mutate(log_size = ifelse(area > 0, log(area), NA)) %>%
+  mutate(surv = ifelse(area>0,1,0))
+rm(jp_mltplpcs,jp_mltplpcs2,jp_onepc,row.i,i)
+
+jp_surv <- jp_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  arrange(pop,plantID,year) %>%
+  group_by(pop,plantID) %>%
+  filter(cumsum(surv==0)<=1) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup()%>% 
+  filter(!is.na(log_size_t0))
+
+jp_growth <- jp_all_sizes %>%
+  dplyr::select(-c(tp,x,y,A1,A2,PM)) %>% 
+  filter(surv == 1) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size),
+         growth = log_size - lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(growth))
+
+```
+
+# --------------
+# Repro data
+# --------------
+
+## average flowers per infloresence by site
+```{r flr2infs}
+
+gp_infs2flrs <- read_xlsx("raw_data/demog/Guanella/gp_inflors2flrs.xlsx") %>% 
+  summarize(infs2flrs = mean(flr/inf,na.rm=T)) %>% 
+  pull(infs2flrs) %>% round(.,1) 
+
+nr_infs2flrs <- read_xlsx("raw_data/demog/Niwot/nr_inflors2flrs.xlsx") %>% 
+  summarize(infs2flrs = mean(flr/inf,na.rm=T)) %>% 
+  pull(infs2flrs) %>% round(.,1) 
+
+jp_infs2flrs <- read_xlsx("raw_data/demog/Jones/jp_inflors2flrs.xlsx") %>% 
+  summarize(infs2flrs = mean(flr.23/inf.23,na.rm=T)) %>% 
+  pull(infs2flrs) %>% round(.,1) 
+```
+
+## Flowering probability and number of flower produced
+```{r repro}
+
+seeds_per_flr <- 1.2
+
+gp_repro <- read_xlsx("raw_data/demog/Guanella/gp_repro.xlsx") %>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>%
+  rename(plantID=id,
+         pop=plot) %>% 
+  dplyr::select(pop, plantID, year, tot_inflors) %>%
+  filter(!is.na(tot_inflors)) %>%
+  left_join(gp_all_sizes %>% dplyr::select(pop, plantID, year, log_size),
+            by = c("pop", "plantID", "year")) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(log_size_t0)) %>%
+  mutate(flowered = ifelse(tot_inflors > 0, 1, 0),
+         total_flrs = tot_inflors * gp_infs2flrs,
+         tot_seeds = total_flrs * seeds_per_flr)
+
+nr_repro <- read_xlsx("raw_data/demog/Niwot/nr_repro.xlsx") %>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>%
+  rename(plantID=id,
+         pop=plot) %>% 
+  mutate(plantID = as.character(plantID)) %>% 
+  dplyr::select(pop, plantID, year, tot_inflors) %>%
+  filter(!is.na(tot_inflors)) %>%
+  left_join(nr_all_sizes[c("pop","plantID","year","log_size")],
+            by = c("pop", "plantID", "year")) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(log_size_t0)) %>%
+  mutate(flowered = ifelse(tot_inflors > 0, 1, 0),
+         total_flrs = tot_inflors * nr_infs2flrs,
+         tot_seeds = total_flrs * seeds_per_flr)
+
+jp_repro <- read_xlsx("raw_data/demog/Jones/jp_repro.xlsx") %>%
+  rename(plantID=id) %>% 
+  dplyr::select(plot, plantID, year, tot_inflors) %>%
+  filter(!is.na(tot_inflors)) %>% 
+  mutate(plot=
+    case_when(plot=="N-east" ~ "NorthEast",
+              plot=="S-east" ~ "SouthEast",
+              plot=="T-east" ~ "TopEast",
+              plot=="N-west" ~ "NorthWest",
+              plot=="T-west" ~ "TopWest",
+              plot=="S-west" ~ "SouthWest")
+  ) %>%
+  rename(pop=plot) %>% 
+  dplyr::select(pop, plantID, year, tot_inflors) %>%
+  filter(!is.na(tot_inflors)) %>%
+  left_join(jp_all_sizes %>% dplyr::select(pop, plantID, year, log_size),
+            by = c("pop", "plantID", "year")) %>%
+  arrange(pop, plantID, year) %>%
+  group_by(pop, plantID) %>%
+  mutate(log_size_t0 = lag(log_size)) %>%
+  ungroup() %>%
+  filter(!is.na(log_size_t0)) %>%
+  mutate(flowered = ifelse(tot_inflors > 0, 1, 0),
+         total_flrs = tot_inflors * jp_infs2flrs,
+         tot_seeds = total_flrs * seeds_per_flr)
+
+```
+
+## Focals and seedlings: Germination and seedling survival
+```{r focals_sdlgs}
+
+# Germination: seedlings in sdlg_year came from seeds in sdlg_year - 1
+gp_germ_rates <- read_xlsx("raw_data/demog/Guanella/gp_focals_sdlgs.xlsx") %>%
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper"),
+    focal.id = as.character(focal.id)) %>%
+  rename(pop=plot) %>% 
+  group_by(pop, focal.id, sdlg_year) %>%
+  summarize(n_sdlgs = sum(!is.na(sdlg.tp)), .groups = "drop") %>%
+  mutate(seed_year = sdlg_year - 1) %>%
+  left_join(gp_repro[,c("pop","plantID","year","tot_seeds")],
+            by = c("pop", "focal.id" = "plantID", "seed_year" = "year")) %>%
+  filter(!is.na(tot_seeds), tot_seeds > 0) %>%
+  mutate(germ_rate = n_sdlgs / tot_seeds) %>% 
+  group_by(pop) %>% 
+  summarise(germ_rate = mean(germ_rate),.groups="drop")
+
+nr_germ_rates <- read_xlsx("raw_data/demog/Niwot/nr_focals_sdlgs.xlsx") %>%
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper"),
+    focal.id = as.character(focal.id)) %>% 
+  rename(pop=plot) %>% 
+  group_by(pop, focal.id, sdlg_year) %>%
+  summarize(n_sdlgs = sum(!is.na(sdlg.tp)), .groups = "drop") %>%
+  mutate(seed_year = sdlg_year - 1) %>%
+  left_join(nr_repro[,c("pop","plantID","year","tot_seeds")],
+            by = c("pop", "focal.id" = "plantID", "seed_year" = "year")) %>%
+  filter(!is.na(tot_seeds), tot_seeds > 0) %>%
+  mutate(germ_rate = n_sdlgs / tot_seeds)%>% 
+  group_by(pop) %>% 
+  summarise(germ_rate = mean(germ_rate),.groups="drop")
+
+jp_germ_rates <- read_xlsx("raw_data/demog/Jones/jp_focals_sdlgs.xlsx") %>% 
+  mutate(plot=
+    case_when(plot=="N-east" ~ "NorthEast",
+              plot=="S-east" ~ "SouthEast",
+              plot=="T-east" ~ "TopEast",
+              plot=="N-west" ~ "NorthWest",
+              plot=="T-west" ~ "TopWest",
+              plot=="S-west" ~ "SouthWest")
+  ) %>%
+  mutate(focal.id = as.character(focal.id)) %>%
+  rename(pop=plot) %>% 
+  group_by(pop, focal.id, sdlg_year) %>%
+  summarize(n_sdlgs = sum(!is.na(sdlg.tp)), .groups = "drop") %>%
+  mutate(seed_year = sdlg_year - 1) %>%
+  left_join(jp_repro[,c("pop","plantID","year","tot_seeds")],
+            by = c("pop", "focal.id" = "plantID", "seed_year" = "year")) %>%
+  filter(!is.na(tot_seeds), tot_seeds > 0) %>%
+  mutate(germ_rate = n_sdlgs / tot_seeds)%>% 
+  group_by(pop) %>% 
+  summarise(germ_rate = mean(germ_rate),.groups="drop")
+
+# Seedling survival
+gp_sdlg_surv <- read_xlsx("raw_data/demog/Guanella/gp_focals_sdlgs.xlsx") %>%
+  mutate(focal.id = as.character(focal.id)) %>%
+  filter(!is.na(sdlg.tp)) %>%
+  dplyr::select(plot, focal.id, sdlg_year, sdlg.tp, surv_t1, surv_t2)%>% 
+  filter(sdlg_year!=2025) %>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>% 
+  rename(pop=plot)
+
+nr_sdlg_surv <- read_xlsx("raw_data/demog/Niwot/nr_focals_sdlgs.xlsx") %>%
+  filter(!is.na(sdlg.tp)) %>%
+  dplyr::select(plot, focal.id, sdlg_year, sdlg.tp, surv_t1, surv_t2) %>% 
+  filter(sdlg_year!=2025)  %>% 
+  mutate(plot=
+    case_when(plot=="N-lower" ~ "NorthLower",
+              plot=="S-lower" ~ "SouthLower",
+              plot=="T-lower" ~ "TopLower",
+              plot=="N-upper" ~ "NorthUpper",
+              plot=="T-upper" ~ "TopUpper",
+              plot=="S-upper" ~ "SouthUpper")
+  ) %>% 
+  rename(pop=plot)
+
+jp_sdlg_surv <- read_xlsx("raw_data/demog/Jones/jp_focals_sdlgs.xlsx") %>%
+  mutate(focal.id = as.character(focal.id)) %>%
+  filter(!is.na(sdlg.tp)) %>%
+  dplyr::select(plot, focal.id, sdlg_year, sdlg.tp, surv_t1, surv_t2)%>% 
+  filter(sdlg_year!=2025)  %>% 
+  mutate(plot=
+    case_when(plot=="N-east" ~ "NorthEast",
+              plot=="S-east" ~ "SouthEast",
+              plot=="T-east" ~ "TopEast",
+              plot=="N-west" ~ "NorthWest",
+              plot=="T-west" ~ "TopWest",
+              plot=="S-west" ~ "SouthWest")
+  ) %>% 
+  rename(pop=plot)
+
+```
+
+
+# --------------
+# Write vital rate model data
+# --------------
+
+```{r write_vr_data}
+write_csv(gp_surv, "mod_data/demog/gp_surv.csv")
+write_csv(nr_surv, "mod_data/demog/nr_surv.csv")
+write_csv(jp_surv, "mod_data/demog/jp_surv.csv")
+
+write_csv(gp_growth, "mod_data/demog/gp_growth.csv")
+write_csv(nr_growth, "mod_data/demog/nr_growth.csv")
+write_csv(jp_growth, "mod_data/demog/jp_growth.csv")
+
+mod_demog_data <- list(
+  surv = bind_rows(gp_surv %>% mutate(site = "guanella"),
+                   nr_surv %>% mutate(site = "niwot"),
+                   jp_surv %>% mutate(site = "jones")),
+  
+  growth = bind_rows(gp_growth %>% mutate(site = "guanella"),
+                     nr_growth %>% mutate(site = "niwot"),
+                     jp_growth %>% mutate(site = "jones")),
+  
+  repro = bind_rows(gp_repro %>% mutate(site = "guanella"),
+                    nr_repro %>% mutate(site = "niwot"),
+                    jp_repro %>% mutate(site = "jones")),
+  
+  germ_rates = bind_rows(gp_germ_rates %>% mutate(site = "guanella"),
+                         nr_germ_rates %>% mutate(site = "niwot"),
+                         jp_germ_rates %>% mutate(site = "jones")),
+  
+  sdlg_surv = bind_rows(gp_sdlg_surv %>% mutate(site = "guanella"),
+                        nr_sdlg_surv %>% mutate(site = "niwot"),
+                        jp_sdlg_surv %>% mutate(site = "jones")),
+  infs2flrs = c(guanella = gp_infs2flrs, niwot = nr_infs2flrs, jones = jp_infs2flrs),
+  seeds_per_flr = seeds_per_flr,
+  recruit_log_size = log(pi * (1.5/2) * (1.5/2))
+)
+saveRDS(mod_demog_data, "mod_data/demog/mod_demog_data.rds")
+```
+
+

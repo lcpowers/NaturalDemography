@@ -1,0 +1,519 @@
+---
+title: "2. Extract microclimate data"
+output: html_document
+date: "2026-04-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##### NEED TO UPDATE FILE PATHS NEXT TIME I RUN #####
+
+# ======================
+# Packages and data 
+# ======================
+## Load packages
+```{r packages}
+# rm(list=ls())
+library(tidyverse)
+library(tools)
+library(terra)
+library(raster)
+library(sf)
+library(starsExtra)
+library(exactextractr)
+library(spatialEco)
+library(MultiscaleDTM)
+library(corrplot)
+
+source("r/helper_functions.R")
+
+projCRS <- 26913
+pops <- c("JP_NorthEast","JP_NorthWest","JP_SouthEast","JP_SouthWest","JP_TopEast","JP_TopWest",
+          "NR_LowerSouth","NR_UpperSouth","NR_LowerNorth","NR_UpperNorth","NR_LowerTop","NR_UpperTop",
+          "GP_LowerSouth","GP_UpperSouth","GP_LowerNorth","GP_UpperNorth","GP_LowerTop","GP_UpperTop")
+
+gp_1m <- rast("raw_data/1m_3DEP/Guanella_1mDEM.tif")
+jp_1m <- rast("raw_data/1m_3DEP/Jones_1mDEM.tif")
+nr_1m <- rast("raw_data/1m_3DEP/Niwot_1mDEM.tif")
+
+pop_info <- st_read("raw_data/natural-demography-plots.gpx",layer = "waypoints") %>%
+  st_transform(crs = projCRS) %>%
+  mutate(easting = st_coordinates(.)[,1],
+         northing = st_coordinates(.)[,2]) %>%
+  dplyr::select(pop=name,easting,northing)
+
+pop_info$elev <- NA
+pop_info$site <- NA
+
+for(i in 1:nrow(pop_info)){
+
+ if(str_detect(pop_info$pop[i], "JP")) dem_1m <- jp_1m else
+ if(str_detect(pop_info$pop[i], "GP")) dem_1m <- gp_1m else
+ if(str_detect(pop_info$pop[i], "NR")) dem_1m <- nr_1m else
+   print("Something is wrong")
+
+ if(str_detect(pop_info$pop[i], "JP")) pop_info$site[i] <- "Jones Pass" else
+ if(str_detect(pop_info$pop[i], "GP")) pop_info$site[i] <- "Guanella Pass" else
+ if(str_detect(pop_info$pop[i], "NR")) pop_info$site[i] <- "Niwot Ridge"
+
+  pop_info$elev[i] <- terra::extract(dem_1m, cbind(pop_info$easting[i],pop_info$northing[i]))[,1] %>% round()
+};rm(i)
+
+# write_csv(as.data.frame(pop_info) %>% select(-geometry),"raw_data/pop_info.csv")
+# pop_info <- read_csv("raw_data/pop_info.csv")
+pop_info_sf <- st_as_sf(pop_info, coords = c("easting","northing"), crs = projCRS)
+pop_info$lat_dd <- st_coordinates(st_transform(pop_info_sf, 4326))[,2]
+# write_csv(pop_info,"raw_data/pop_info.csv")
+rm(pop_info_sf)
+```
+
+## load data: 1 cm dems and shapefiles
+```{r data}
+dem.fns <- list.files("raw_data/dems",full.names = T,recursive = T)
+marker.fns <- list.files("data/shapefiles",full.names=T,recursive = T,pattern = ".shp")
+
+# Make sure there are 18 when all shapefiles are uploaded
+pops <- intersect(file_path_sans_ext(basename(dem.fns)),
+                     file_path_sans_ext(basename(marker.fns)))
+sample.size <- 0
+for(pop in pops){
+  
+  site = ifelse(str_detect(pop,"JP"),"Jones",
+                ifelse(str_detect(pop,"GP"),"Guanella",
+                       ifelse(str_detect(pop,"NR"),"Niwot",
+                              "Something is wrong")))
+  
+  tmp.ras <- rast(paste0("data/dems/",site,"/",pop,".tif"))
+  tmp.shp <- read_sf(paste0("data/shapefiles/",site,"/",pop,".shp")) %>% 
+    dplyr::select(-FID)
+  
+  ras.mask <- filter(tmp.shp,
+                          str_detect(NAME,"corner")) %>% 
+    summarize() %>% 
+    st_convex_hull() %>% 
+    st_buffer(.,1)
+
+  tmp.plants <- tmp.shp %>% 
+    filter(!str_detect(NAME,"corner"),
+           !str_detect(NAME,"scale"),
+           !str_detect(NAME,"tie"),
+           !str_detect(NAME,"GCP"),
+           !str_detect(NAME,"TR")) %>% 
+    rename(plantID=NAME) %>% 
+    mutate(pop=str_sub(string = pop,4,end = nchar(pop)),
+           site=site)
+  sample.size <- sample.size+nrow(tmp.plants)
+  tmp.ras.crop <- crop(x = tmp.ras,y = ras.mask) %>% 
+    mask(.,ras.mask)
+  
+  # plot(tmp.ras.crop,main=pop);plot(tmp.plants$geometry,add=T)
+  # cat("\n",pop,res(tmp.ras.crop),"\n")
+  
+  assign(x = paste0(pop,"_ras"),value = tmp.ras.crop)
+  assign(x = paste0(pop,"_plants"),value = tmp.plants)
+  
+}
+rm(site,pop,tmp.shp,tmp.ras,tmp.ras.crop,tmp.plants,ras.mask)
+```
+
+# ======================
+# Extract microtopography variables
+# ======================
+```{r extract_microtopo}
+
+radii_m <- c(0.25) # c(0.1, 0.3, 0.5)
+
+for(pop in pops){
+
+  cat(pop, "\n")
+
+  points <- get(paste0(pop, "_plants"))
+  dem_terra <- get(paste0(pop, "_ras"))
+
+  site <- ifelse(str_detect(pop,"JP"),"Jones",
+                 ifelse(str_detect(pop,"GP"),"Guanella","Niwot"))
+
+  dem_trend <- rast(file.path("data/dems", site, paste0(pop, "_trend.tif")))
+  lat_dd <- pop_info$lat_dd[pop_info$pop == pop]
+
+  # Terrain rasters
+  micro_terrain <- terra::terrain(dem_terra, v = c("slope","aspect"), unit = "degrees")
+  trend_terrain <- terra::terrain(dem_trend, v = c("slope","aspect"), unit = "degrees")
+
+  micro_east <- sin(micro_terrain[["aspect"]] * pi/180)
+  micro_north <- cos(micro_terrain[["aspect"]] * pi/180)
+  trend_east <- sin(trend_terrain[["aspect"]] * pi/180)
+  trend_north <- cos(trend_terrain[["aspect"]] * pi/180)
+
+  hli_ras <- spatialEco::hli(dem_terra)
+  # pins_ras <- p_insol(dem_terra, lat_dd)
+
+  # Point elevation
+  buf_pt <- st_buffer(points, 0.01)
+  points$elv_pt <- exact_extract(dem_terra, buf_pt, fun = "mean", progress = FALSE)
+
+  # Trend vars at 25cm only
+  buf_25 <- st_buffer(points, 0.25)
+  points$slpT_25 <- exact_extract(trend_terrain[["slope"]], buf_25, fun = w_mean, progress = FALSE)
+  # points$aspT_30 <- exact_extract(trend_terrain[["aspect"]], buf_25, fun = w_circ_mean_deg, progress = FALSE)
+  points$estT_25 <- exact_extract(trend_east, buf_25, fun = w_mean, progress = FALSE)
+  points$nrtT_25 <- exact_extract(trend_north, buf_25, fun = w_mean, progress = FALSE)
+
+  # Population-level eastness/northness from full trend DEM
+  # points$pop_est <- as.numeric(global(trend_east, "mean", na.rm = TRUE))
+  # points$pop_nrt <- as.numeric(global(trend_north, "mean", na.rm = TRUE))
+  # points$pop_slp <- as.numeric(global(trend_terrain$slope, "mean", na.rm = TRUE))
+  
+  # Per-radius extraction
+  for(rad in radii_m){
+
+    buf <- st_buffer(points, rad)
+    sfx <- rad * 100
+
+    # Slope, aspect, eastness, northness from detailed DEM
+    points[[paste0("slp_", sfx)]] <- exact_extract(micro_terrain[["slope"]], buf, fun = w_mean, progress = FALSE)
+    # points[[paste0("asp_", sfx)]] <- exact_extract(micro_terrain[["aspect"]], buf, fun = w_circ_mean_deg, progress = FALSE)
+    points[[paste0("est_", sfx)]] <- exact_extract(micro_east, buf, fun = w_mean, progress = FALSE)
+    points[[paste0("nrt_", sfx)]] <- exact_extract(micro_north, buf, fun = w_mean, progress = FALSE)
+
+    # TPI (scale = radius in meters for 1 cm DEM)
+    tpi_r <- spatialEco::tpi(dem_terra, scale = rad, win = "circle")
+    points[[paste0("tpi_", sfx)]] <- exact_extract(tpi_r, buf_pt, fun = w_mean, progress = FALSE)
+
+    # TRI (TRIrmsd: normalized by cell count)
+    s_i <- as.integer(round(rad * 100 * 2 + 1))
+    tmp_tri <- terra::focal(dem_terra, w = matrix(1, s_i, s_i),
+                            fun = function(x) {
+                              center_idx <- length(x) %/% 2 + 1
+                              sqrt(sum((x - x[center_idx])^2, na.rm = TRUE) / sum(!is.na(x)))
+                            })
+    points[[paste0("tri_", sfx)]] <- exact_extract(tmp_tri, buf_pt, fun = w_mean, progress = FALSE)
+
+    # Curvature
+    win <- as.integer(round(rad * 100 * 2 + 1))
+    q <- MultiscaleDTM::Qfit(r = dem_terra, w = c(win, win), metrics = c("profc","planc","maxc","meanc"))
+    points[[paste0("plcv_", sfx)]] <- exact_extract(q$planc, buf_pt, fun = w_mean, progress = FALSE)
+    points[[paste0("prcv_", sfx)]] <- exact_extract(q$profc, buf_pt, fun = w_mean, progress = FALSE)
+
+    # HLI and potential insolation
+    points[[paste0("hli_", sfx)]] <- exact_extract(raster(hli_ras), buf, fun = w_mean, progress = FALSE)
+    # points[[paste0("pins_", sfx)]] <- exact_extract(pins_ras, buf, fun = w_mean, progress = FALSE)
+
+  }
+
+  assign(paste0(pop, "_plants"), points, envir = .GlobalEnv)
+}
+```
+
+# ======================
+# Mesoscale topography from 1m 3DEP DEM (population-level)
+# ======================
+```{r extract_mesotopo}
+
+meso_tpi_radii <- c(10, 50)
+
+for(pop in pops){
+
+  cat(pop, "\n")
+
+  site <- ifelse(str_detect(pop,"JP"),"Jones",
+                 ifelse(str_detect(pop,"GP"),"Guanella","Niwot"))
+
+  # Pop centroid as terra SpatVector point
+  pt <- pop_info[pop_info$pop == pop,]
+  pt_vect <- vect(cbind(pt$easting, pt$northing), crs = paste0("EPSG:", projCRS))
+
+  # Load and aggregate 1m DEM to 5m, cropped to area around pop (600m buffer for largest TPI radius)
+  dem_1m <- if(str_detect(pop,"JP")) jp_1m else if(str_detect(pop,"GP")) gp_1m else nr_1m
+  dem_5m <- aggregate(crop(dem_1m, buffer(pt_vect, 600)), fact = 5, fun = "mean")
+
+  # Terrain from 5m DEM
+  terrain_5m <- terra::terrain(dem_5m, v = c("slope","aspect"), unit = "degrees")
+  east_5m <- sin(terrain_5m[["aspect"]] * pi/180)
+  nrt_5m <- cos(terrain_5m[["aspect"]] * pi/180)
+
+  # Slope, eastness, northness, curvature averaged within 50m of pop centroid
+  buf_50m <- buffer(pt_vect, 50)
+  ms_slp_50 <- mean(terra::extract(terrain_5m[["slope"]], buf_50m, fun = "mean")[,2], na.rm = TRUE)
+  ms_est_50 <- mean(terra::extract(east_5m, buf_50m, fun = "mean")[,2], na.rm = TRUE)
+  ms_nrt_50 <- mean(terra::extract(nrt_5m, buf_50m, fun = "mean")[,2], na.rm = TRUE)
+
+  q_50m <- MultiscaleDTM::Qfit(r = dem_5m, w = c(21, 21), metrics = c("profc","planc"))
+  ms_plcv_50 <- mean(terra::extract(q_50m$planc, buf_50m, fun = "mean")[,2], na.rm = TRUE)
+  ms_prcv_50 <- mean(terra::extract(q_50m$profc, buf_50m, fun = "mean")[,2], na.rm = TRUE)
+
+  # TPI at each radius
+  meso_tpi <- setNames(numeric(length(meso_tpi_radii)), paste0("ms_tpi_", meso_tpi_radii))
+  for(r in meso_tpi_radii){
+    w <- (r / 5) * 2 + 1  # window width in cells
+    focal_mean <- terra::focal(dem_5m, w = w, fun = "mean", na.rm = TRUE)
+    tpi_r <- dem_5m - focal_mean
+    meso_tpi[paste0("ms_tpi_", r)] <- terra::extract(tpi_r, pt_vect)[,2]
+  }
+
+  # Add all meso vars to every plant in this pop
+  points <- get(paste0(pop, "_plants"))
+  points$ms_slp_50 <- ms_slp_50
+  points$ms_est_50 <- ms_est_50
+  points$ms_nrt_50 <- ms_nrt_50
+  points$ms_plcv_50 <- ms_plcv_50
+  points$ms_prcv_50 <- ms_prcv_50
+  for(nm in names(meso_tpi)) points[[nm]] <- meso_tpi[nm]
+
+  assign(paste0(pop, "_plants"), points, envir = .GlobalEnv)
+}
+```
+
+# ======================
+# Save
+# ======================
+```{r save}
+
+# dir.create("data/output", showWarnings = FALSE)
+
+all_plants <- bind_rows(lapply(pops, function(p) get(paste0(p, "_plants"))))%>% 
+  st_zm(.) %>%
+  mutate(site = tolower(site)) %>%
+  mutate(pop = case_when(pop=="LowerNorth"~"NorthLower",
+                         pop=="UpperNorth"~"NorthUpper",
+                         pop=="LowerSouth"~"SouthLower",
+                         pop=="UpperSouth"~"SouthUpper",
+                         pop=="LowerTop"~"TopLower",
+                         pop=="UpperTop"~"TopUpper",
+                         
+                         pop=="EastNorth"~"NorthEast",
+                         pop=="WestNorth"~"NorthWest",
+                         pop=="EastSouth"~"SouthEast",
+                         pop=="WestSouth"~"SouthWest",
+                         pop=="EastTop"~"TopEast",
+                         pop=="WestTop"~"TopWest"))
+
+saveRDS(all_plants, "data/output/allPops_microtopo_25cm.rds")
+st_write(all_plants, "data/output/allPops_microtopo_25cm.shp",append=F)
+all_plants_df <- as.data.frame(all_plants) %>% 
+  dplyr::select(-geometry)
+write_csv(all_plants_df, "data/output/allPops_microtopo_25cm.csv")
+
+cat("Saved", nrow(all_plants), "plants across", length(pops), "populations.\n")
+```
+
+# ======================
+# Population-level aspect and slope from trend DEM
+# ======================
+```{r pop_aspect}
+pop_info$pop_slp <- NA
+pop_info$pop_asp <- NA
+pop_info$pop_est <- NA
+pop_info$pop_nrt <- NA
+pops <- pop_info$pop
+for(pop in pops){
+  site <- ifelse(str_detect(pop,"JP"),"Jones",
+                 ifelse(str_detect(pop,"GP"),"Guanella","Niwot"))
+
+  dem_trend <- rast(file.path("data/dems", site, paste0(pop, "_trend.tif")))
+  trend_terrain <- terra::terrain(dem_trend, v = c("slope","aspect"), unit = "degrees")
+
+  pop_info$pop_slp[pop_info$pop == pop] <- as.numeric(global(trend_terrain[["slope"]], "mean", na.rm = TRUE))
+  pop_info$pop_est[pop_info$pop == pop] <- as.numeric(global(sin(trend_terrain[["aspect"]] * pi/180), "mean", na.rm = TRUE))
+  pop_info$pop_nrt[pop_info$pop == pop] <- as.numeric(global(cos(trend_terrain[["aspect"]] * pi/180), "mean", na.rm = TRUE))
+}
+
+# Back-convert mean eastness/northness to aspect degrees (handles circularity correctly)
+pop_info$pop_asp <- (atan2(pop_info$pop_est, pop_info$pop_nrt) * 180/pi) %% 360
+
+pop_info$aspect_cat <- case_when(
+  str_detect(pop_info$pop, "North") ~ "north",
+  str_detect(pop_info$pop, "South") ~ "south",
+  str_detect(pop_info$pop, "Top")   ~ "top"
+  )
+
+# write_csv(as.data.frame(pop_info) %>% dplyr::select(-geometry), "data/pop_info_slopeAspect.csv")
+# 
+# ggplot(pop_info,aes(x=aspect_cat,y=pop_slp))+
+#   geom_point(aes(color=pop))+
+#   facet_wrap(~site)+
+#   geom_label(aes(label=pop))
+
+```
+
+# ======================
+# Look at correlations in spatial data
+# ======================
+
+## First pass selection of microtopo variables based on correlations
+```{r microtopo_corrs}
+
+microtopo_dats <- read_csv("data/output/allPops_microtopo_25cm.csv") %>% 
+  dplyr::select(-plantID,-elv_pt)
+  
+remove_cols <- c(
+  # paste0("prcv_",c(10,50)),
+  # paste0("plcv_",c(10,50)),
+  # paste0("pins_",c(10,30,50)),
+  paste0("hli_",c(25)),
+  # paste0("nrt_",c(10,50)),
+  # paste0("est_",c(10,50)),
+  # paste0("tri_",c(10,50)),
+  # paste0("tpi_",c(10,50)),
+  paste0("slp_",c(25)),
+  "slpT_25",
+  "estT_25",
+  # "ms_tpi_50",
+  # "aspT_30",
+  "nrtT_25"#,
+  # "pop_slp","pop_nrt","pop_est"
+)
+
+corr_dats <- microtopo_dats  %>% 
+  dplyr::select(-all_of(remove_cols)) %>%                    
+  dplyr::select(-starts_with("ms_")) %>%                    
+  corrr::correlate(quiet = TRUE) %>%
+  corrr::stretch(na.rm = TRUE)
+
+ggplot(corr_dats,aes(x, y, fill = r, label = round(r, 2))) +
+  geom_tile() +
+  geom_text(size = 2.5) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_blank())
+
+model_microtopo_dats <- read_csv("data/output/allPops_microtopo_25cm.csv")%>% 
+  dplyr::select(-all_of(remove_cols),
+                -starts_with("ms_"))
+
+write_csv(model_microtopo_dats,"data/output/model_microtopo_25cm.csv")
+```
+
+# #####################
+# Things below here 
+# have been done, 
+# saved or fixed
+# ----------------------------------
+## ===========
+## Detrend DEMs 
+## with starsExtra 
+## ===========
+
+```{r detrendDEMs}
+
+for(pop in pops){
+
+  site <- ifelse(str_detect(pop,"JP"),"Jones",
+              ifelse(str_detect(pop,"GP"),"Guanella",
+                     ifelse(str_detect(pop,"NR"),"Niwot",
+                            "Something is wrong")))
+  
+  dem_terra <- get(paste0(pop,"_ras"))
+  
+  # Detrend raster to get average slope and aspect
+  dem_stars <- st_as_stars(dem_terra)
+
+  # starsExtra to detrend DEM
+  dem_detrended_stars <- starsExtra::detrend(dem_stars)
+  dem_detrended <- rast(dem_detrended_stars)[[1]]
+  dem_trend <-  rast(dem_detrended_stars)[[2]]
+
+  # Save detrended DEM and trend surface for future use
+  writeRaster(dem_detrended,
+              file.path("data/dems/",site,"/", paste0(pop, "_detrended.tif")),
+              overwrite = TRUE)
+  
+  writeRaster(dem_trend,
+              file.path("data/dems/",site,"/", paste0(pop, "_trend.tif")),
+              overwrite = TRUE)
+  
+}
+```
+
+## ===========
+## Check for duplicate 
+## plant IDs
+## ===========
+```{r dupIDs}
+# 
+# duplicates <- NULL
+# 
+# for(pop in pops){
+# 
+#   tmp.shp <- get(paste0(pop,"_plants")) %>%
+#     mutate(pop=pop) %>%
+#     as.data.frame() %>%
+#     group_by(pop,plantID) %>%
+#     tally() %>%
+#     filter(n>1)
+# 
+#   if(nrow(tmp.shp)>0){
+# 
+#     duplicates <- rbind(duplicates,tmp.shp)
+#     rm(tmp.shp)
+# 
+#   }
+# 
+# }
+
+```
+
+# #####################
+# Scratch
+# ----------------------------------
+# ======================
+# Extract microtopography variables from 5cm aggregated DEM
+# ======================
+```{r extract_microtopo_5cm}
+
+# for(pop in pops){
+# 
+#   cat(pop, "\n")
+# 
+#   points <- get(paste0(pop, "_plants"))
+#   dem_terra <- get(paste0(pop, "_ras"))
+#   dem_5cm <- aggregate(dem_terra, fact = 5, fun = "mean")
+# 
+#   lat_dd <- pop_info$lat_dd[pop_info$pop == pop]
+# 
+#   micro_terrain <- terra::terrain(dem_5cm, v = c("slope","aspect"), unit = "degrees")
+#   micro_east <- sin(micro_terrain[["aspect"]] * pi/180)
+#   micro_north <- cos(micro_terrain[["aspect"]] * pi/180)
+# 
+#   hli_ras <- spatialEco::hli(dem_5cm)
+#   pins_ras <- p_insol(dem_5cm, lat_dd)
+# 
+#   buf_pt <- st_buffer(points, 0.01)
+# 
+#   for(rad in radii_m[radii_m > 0.1]){
+# 
+#     buf <- st_buffer(points, rad)
+#     sfx <- rad * 100
+# 
+#     points[[paste0("slp_", sfx, "_5")]] <- exact_extract(micro_terrain[["slope"]], buf, fun = w_mean, progress = FALSE)
+#     points[[paste0("asp_", sfx, "_5")]] <- exact_extract(micro_terrain[["aspect"]], buf, fun = w_circ_mean_deg, progress = FALSE)
+#     points[[paste0("est_", sfx, "_5")]] <- exact_extract(micro_east, buf, fun = w_mean, progress = FALSE)
+#     points[[paste0("nrt_", sfx, "_5")]] <- exact_extract(micro_north, buf, fun = w_mean, progress = FALSE)
+# 
+#     tpi_r <- spatialEco::tpi(dem_5cm, scale = rad, win = "circle")
+#     points[[paste0("tpi_", sfx, "_5")]] <- exact_extract(tpi_r, buf_pt, fun = w_mean, progress = FALSE)
+# 
+#     # TRI window in cells for 5cm DEM (rad / 0.05 cells per meter)
+#     s_i <- as.integer(round((rad / 0.05) * 2 + 1))
+#     tmp_tri <- terra::focal(dem_5cm, w = base::matrix(data = 1, nrow = s_i, ncol = s_i),
+#                             fun = function(x) {
+#                               center_idx <- length(x) %/% 2 + 1
+#                               sqrt(sum((x - x[center_idx])^2, na.rm = TRUE) / sum(!is.na(x)))
+#                             })
+#     points[[paste0("tri_", sfx, "_5")]] <- exact_extract(tmp_tri, buf_pt, fun = w_mean, progress = FALSE)
+# 
+#     win <- as.integer(round((rad / 0.05) * 2 + 1))
+#     q <- MultiscaleDTM::Qfit(r = dem_5cm, w = c(win, win), metrics = c("profc","planc","maxc","meanc"))
+#     points[[paste0("plcv_", sfx, "_5")]] <- exact_extract(q$planc, buf_pt, fun = w_mean, progress = FALSE)
+#     points[[paste0("prcv_", sfx, "_5")]] <- exact_extract(q$profc, buf_pt, fun = w_mean, progress = FALSE)
+# 
+#     points[[paste0("hli_", sfx, "_5")]] <- exact_extract(raster(hli_ras), buf, fun = w_mean, progress = FALSE)
+#     points[[paste0("pins_", sfx, "_5")]] <- exact_extract(pins_ras, buf, fun = w_mean, progress = FALSE)
+#   }
+# 
+#   assign(paste0(pop, "_plants"), points, envir = .GlobalEnv)
+# }
+```
