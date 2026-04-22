@@ -24,17 +24,15 @@ clim <- read_csv("mod_data/full_climate.csv")
 clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
 
 microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv")
-mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt")]
-
-cor(surv_mod_data_scaled[,c("pop_est", "pop_nrt", "pop_slp",mt_vars)]) %>% corrplot::corrplot(method = "number")
+mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt","aspect.cat","pop_slp")]
 ```
 
 # --------------
 # Clim models
 ```{r clim_global_models}
 
-clim_pred_vars <- "log_size_t0*(pop_est + pop_nrt + pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
-                                gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) + (1|pop.set.year)"
+clim_pred_vars <- c("log_size_t0*(pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+                                gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) + (1|pop.set.year)")
 
 surv_clim_formula <- as.formula(paste0("surv ~ ",clim_pred_vars))
 surv_clim_mod <- glmer(surv_clim_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
@@ -73,10 +71,11 @@ stopCluster(clust)
 ```
 
 ```{r clim_model_selection}
-surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = )[[1]], nAGQ = 1)
-growth_clim_best_mod <- get.models(dredge_growth_clim, subset = )[[1]]
-repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = )[[1]], nAGQ = 1)
-nflrs_clim_best_mod <- update(get.models(dredge_nflrs_clim, subset = )[[1]], nAGQ = 1)
+surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = 1)[[1]], nAGQ = 1)
+growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 2)[[1]] # includes win range^2 which is in lots of the best
+repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = 1)[[1]], nAGQ = 1)
+nflrs_clim_best_mod <- update(get.models(dredge_nflrs_clim, subset = 1)[[1]], nAGQ = 1)
+performance::check_overdispersion(nflrs_clim_best_mod) 
 ```
 
 ```{r growth_var_clim_dredge}
@@ -160,11 +159,11 @@ for (mt_var in mt_vars) {
 }
 
 # Set MT vars per vital rate based on screening results above
-surv_mt_vars <- c()
-growth_mt_vars <- c()
-repro_mt_vars <- c()
-nflrs_mt_vars <- c()
-growth_var_mt_vars <- c()
+surv_mt_vars <- c("nrt_25","tpi_25")
+growth_mt_vars <- c("tri_25","plcv_25")
+repro_mt_vars <- c("est_25","prcv_25")
+nflrs_mt_vars <- c("tri_25","tpi_25","nrt_25")
+# growth_var_mt_vars <- c()
 ```
 
 # --------------
@@ -183,7 +182,9 @@ surv_clim_mt_formula <- as.formula(paste(
   paste(surv_clim_fixed, collapse = " + "), ") * (",
   paste(surv_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
 ))
+surv_clim_mt_formula
 surv_clim_mt_mod <- glmer(surv_clim_mt_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
+length(attr(terms(surv_clim_mt_mod), "term.labels"))
 
 growth_clim_mt_formula <- as.formula(paste(
   "growth ~ log_size_t0 * (",
@@ -192,6 +193,7 @@ growth_clim_mt_formula <- as.formula(paste(
   paste(growth_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
 ))
 growth_clim_mt_mod <- lmer(growth_clim_mt_formula, data = growth_mod_data_scaled, REML = FALSE)
+length(attr(terms(growth_clim_mt_mod), "term.labels"))
 
 repro_clim_mt_formula <- as.formula(paste(
   "flowered ~ log_size_t0 * (",
@@ -200,6 +202,7 @@ repro_clim_mt_formula <- as.formula(paste(
   paste(repro_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
 ))
 repro_clim_mt_mod <- glmer(repro_clim_mt_formula, family = binomial, data = repro_mod_data_scaled, nAGQ = 0)
+length(attr(terms(repro_clim_mt_mod), "term.labels"))
 
 nflrs_clim_mt_formula <- as.formula(paste(
   "total_flrs ~ log_size_t0 * (",
@@ -208,6 +211,7 @@ nflrs_clim_mt_formula <- as.formula(paste(
   paste(nflrs_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
 ))
 nflrs_clim_mt_mod <- glmer.nb(nflrs_clim_mt_formula, data = nflrs_mod_data_scaled, nAGQ = 0)
+length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 ```
 
 ```{r clim_mt_dredge}
