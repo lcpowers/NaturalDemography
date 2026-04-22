@@ -893,7 +893,7 @@ clim_summary <- all_climate %>%
     win_meanT_range = max(meanT[winter], na.rm = TRUE) - min(meanT[winter], na.rm = TRUE),
 
     # Growing season (May-Jul)
-    gs_snow_days    = sum(snowcover[grwszn], na.rm = TRUE),
+    # gs_snow_days    = sum(snowcover[grwszn], na.rm = TRUE),
     # gs_swe_total    = sum(snotel_swe[grwszn], na.rm = TRUE),
     gs_meanT_mean   = mean(meanT[grwszn], na.rm = TRUE),
     # gs_meanT_min    = min(meanT[grwszn], na.rm = TRUE),
