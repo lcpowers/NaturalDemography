@@ -1,0 +1,206 @@
+---
+title: "5A_FitVRmodels_climOnly_mtOnly"
+output: html_document
+date: "2026-04-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(lme4)
+library(MuMIn)
+library(car)
+library(parallel)
+library(patchwork)
+
+options(na.action = "na.fail")
+
+readRDS("mod_data/all_mod_data.rds") %>% list2env(.GlobalEnv)
+clim <- read_csv("mod_data/climate/full_climate.csv")
+clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
+
+microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv")
+mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt")]
+
+surv_mod_data_scaled$aspect.cat <- relevel(as.factor(surv_mod_data_scaled$aspect.cat), ref = "top")
+growth_mod_data_scaled$aspect.cat <- relevel(as.factor(growth_mod_data_scaled$aspect.cat), ref = "top")
+repro_mod_data_scaled$aspect.cat <- relevel(as.factor(repro_mod_data_scaled$aspect.cat), ref = "top")
+nflrs_mod_data_scaled$aspect.cat <- relevel(as.factor(nflrs_mod_data_scaled$aspect.cat), ref = "top")
+
+surv_mod_data_scaled$site <- relevel(as.factor(surv_mod_data_scaled$site), ref = "niwot")
+growth_mod_data_scaled$site <- relevel(as.factor(growth_mod_data_scaled$site), ref = "niwot")
+repro_mod_data_scaled$site <- relevel(as.factor(repro_mod_data_scaled$site), ref = "niwot")
+nflrs_mod_data_scaled$site <- relevel(as.factor(nflrs_mod_data_scaled$site), ref = "niwot")
+```
+
+# --------------
+# Site and year only
+```{r pop-year-models}
+surv_popyr_formula <- as.formula("surv ~ log_size_t0*(year + site.pop + gs_meanT_mean + I(gs_meanT_mean^2)) + year*site.pop")
+surv_popyr_mod <- glm(surv_popyr_formula, family = binomial, data = surv_mod_data_scaled)
+siteyear_dredge <- dredge(surv_popyr_mod,subset = dc("gs_meanT_mean","I(gs_meanT_mean"))
+
+growth_popyr_formula <- as.formula("growth ~ log_size_t0*(year + site.pop) + year*site.pop")
+growth_popyr_mod <- lmer(growth_clim_formula, data = growth_mod_data_scaled, REML = F)
+
+repro_popyr_formula <- as.formula(paste(c("flowered ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+repro_popyr_mod <- glmer(repro_clim_formula, data = repro_mod_data_scaled, family = binomial, nAGQ = 0)
+
+nflrs_popyr_formula <- as.formula(paste(c("total_flrs ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop) + (1|obs_id)"), collapse = " "))
+nflrs_popyr_mod <- glmer(nflrs_clim_formula, data = nflrs_mod_data_scaled, family = poisson, nAGQ = 0)
+```
+
+
+# --------------
+# Clim-only models
+
+```{r climOnly_global_models}
+surv_clim_formula <- as.formula(paste(c("surv ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+surv_clim_mod <- glmer(surv_clim_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
+
+growth_clim_formula <- as.formula(paste(c("growth ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+growth_clim_mod <- lmer(growth_clim_formula, data = growth_mod_data_scaled, REML = F)
+
+repro_clim_formula <- as.formula(paste(c("flowered ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop)"), collapse = " "))
+repro_clim_mod <- glmer(repro_clim_formula, data = repro_mod_data_scaled, family = binomial, nAGQ = 0)
+
+nflrs_clim_formula <- as.formula(paste(c("total_flrs ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), " + site*aspect.cat) + (1|site.pop) + (1|obs_id)"), collapse = " "))
+nflrs_clim_mod <- glmer(nflrs_clim_formula, data = nflrs_mod_data_scaled, family = poisson, nAGQ = 0)
+```
+
+
+```{r climOnly_dredge}
+# Note: must not name the cluster 'cl' — MuMIn uses cl <- match.call() internally,
+# which causes a name collision that silently breaks parallel dispatch.
+clust <- makeCluster(40, type = "FORK")
+
+dredge_surv_climOnly <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+
+dredge_growth_climOnly <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+
+dredge_repro_climOnly <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+
+dredge_nflrs_climOnly <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+
+stopCluster(clust)
+```
+
+```{r climOnly_model_selection}
+surv_climOnly_best_mod <- update(get.models(dredge_surv_climOnly, subset = 1)[[1]], nAGQ = 1)
+growth_climOnly_best_mod <- get.models(dredge_growth_climOnly, subset = 3)[[1]]
+repro_climOnly_best_mod <- update(get.models(dredge_repro_climOnly, subset = 1)[[1]], nAGQ = 1)
+nflrs_climOnly_best_mod <- update(get.models(dredge_nflrs_climOnly, subset = 1)[[1]], nAGQ = 1)
+```
+
+```{r growth_var_climOnly_dredge}
+growth_var_mod_data_scaled <- growth_mod_data_scaled %>%
+  mutate(growth_resid.sq = residuals(growth_climOnly_best_mod)^2)
+growth_var_clim_formula <- as.formula(paste(c("growth_resid.sq ~ log_size_t0*(year + site + aspect.cat + ", paste(clim_vars, collapse = " + "), ") + site*aspect.cat + (1|site.pop)"), collapse = " "))
+growth_var_clim_mod <- lmer(growth_var_clim_formula, data = growth_var_mod_data_scaled, REML = FALSE, na.action = na.fail)
+
+clust <- makeCluster(30, type = "FORK")
+dredge_growth_var_climOnly <- dredge(growth_var_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2,subset = !(ann_snow_days & win_meanT_mean) & !(ann_snow_days & gs_snow_days))
+stopCluster(clust)
+
+growth_var_climOnly_best_mod <- get.models(dredge_growth_var_climOnly, subset = 1)[[1]]
+growth_var_climOnly_best_mod_data <- growth_var_mod_data_scaled
+```
+
+# --------------
+# MT-only models
+
+```{r mtOnly_global_models}
+surv_mt_formula <- as.formula(paste(c("surv ~ log_size_t0*(year + site + aspect.cat + ", paste(mt_mod_vars, collapse = " + "), ") + site*aspect.cat + (1|site.pop)"), collapse = " "))
+surv_mt_mod <- glmer(surv_mt_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
+
+growth_mt_formula <- as.formula(paste(c("growth ~ log_size_t0*(year + site + aspect.cat + ", paste(mt_mod_vars, collapse = " + "), ") + site*aspect.cat + (1|site.pop)"), collapse = " "))
+growth_mt_mod <- lmer(growth_mt_formula, data = growth_mod_data_scaled, REML = F)
+
+repro_mt_formula <- as.formula(paste(c("flowered ~ log_size_t0*(year + site + aspect.cat + ", paste(mt_mod_vars, collapse = " + "), ") + site*aspect.cat + (1|site.pop)"), collapse = " "))
+repro_mt_mod <- glmer(repro_mt_formula, data = repro_mod_data_scaled, family = binomial, nAGQ = 0)
+
+nflrs_mt_formula <- as.formula(paste(c("total_flrs ~ log_size_t0*(year + site + aspect.cat + ", paste(mt_mod_vars, collapse = " + "), ") + site*aspect.cat + (1|site.pop) + (1|obs_id)"), collapse = " "))
+nflrs_mt_mod <- glmer(nflrs_mt_formula, data = nflrs_mod_data_scaled, family = poisson, nAGQ = 0)
+```
+
+```{r mtOnly_dredge}
+# Note: must not name the cluster 'cl' — MuMIn uses cl <- match.call() internally,
+# which causes a name collision that silently breaks parallel dispatch.
+clust <- makeCluster(40, type = "FORK")
+
+dredge_surv_mtOnly <- dredge(surv_mt_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2)
+
+dredge_growth_mtOnly <- dredge(growth_mt_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2)
+
+dredge_repro_mtOnly <- dredge(repro_mt_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2)
+
+dredge_nflrs_mtOnly <- dredge(nflrs_mt_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2)
+
+stopCluster(clust)
+```
+
+```{r mtOnly_model_selection}
+surv_mtOnly_best_mod <- update(get.models(dredge_surv_mtOnly, subset = 1)[[1]], nAGQ = 1)
+growth_mtOnly_best_mod <- get.models(dredge_growth_mtOnly, subset = 1)[[1]]
+repro_mtOnly_best_mod <- update(get.models(dredge_repro_mtOnly, subset = 1)[[1]], nAGQ = 1)
+nflrs_mtOnly_best_mod <- update(get.models(dredge_nflrs_mtOnly, subset = 1)[[1]], nAGQ = 1)
+```
+
+```{r growth_var_mtOnly_dredge}
+growth_var_mod_data_scaled <- growth_mod_data_scaled %>%
+  mutate(growth_resid.sq = residuals(growth_mtOnly_best_mod)^2)
+growth_var_mt_formula <- as.formula(paste(c("growth_resid.sq ~ log_size_t0*(year + site + aspect.cat + ", paste(mt_mod_vars, collapse = " + "), ") + (1|site.pop)"), collapse = " "))
+growth_var_mt_mod <- lmer(growth_var_mt_formula, data = growth_var_mod_data_scaled, REML = FALSE, na.action = na.fail)
+
+clust <- makeCluster(30, type = "FORK")
+dredge_growth_var_mtOnly <- dredge(growth_var_mt_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2)
+stopCluster(clust)
+
+growth_var_mtOnly_best_mod <- get.models(dredge_growth_var_mtOnly, subset = 1)[[1]]
+```
+
+# --------------
+# Save models
+
+```{r save_models}
+climOnly_dredge_top10 <- list(
+  surv_dredge_climOnly = as.data.frame(dredge_surv_climOnly) %>% slice_head(n = 10),
+  growth_dredge_climOnly = as.data.frame(dredge_growth_climOnly) %>% slice_head(n = 10),
+  growth_var_dredge_climOnly = as.data.frame(dredge_growth_var_climOnly) %>% slice_head(n = 10),
+  repro_dredge_climOnly = as.data.frame(dredge_repro_climOnly) %>% slice_head(n = 10),
+  nflrs_dredge_climOnly = as.data.frame(dredge_nflrs_climOnly) %>% slice_head(n = 10)
+)
+
+mtOnly_dredge_top10 <- list(
+  surv_dredge_mtOnly = as.data.frame(dredge_surv_mtOnly) %>% slice_head(n = 10),
+  growth_dredge_mtOnly = as.data.frame(dredge_growth_mtOnly) %>% slice_head(n = 10),
+  growth_var_dredge_mtOnly = as.data.frame(dredge_growth_var_mtOnly) %>% slice_head(n = 10),
+  repro_dredge_mtOnly = as.data.frame(dredge_repro_mtOnly) %>% slice_head(n = 10),
+  nflrs_dredge_mtOnly = as.data.frame(dredge_nflrs_mtOnly) %>% slice_head(n = 10)
+)
+
+climOnly_model_list <- list(
+  surv_climOnly_best_mod = surv_climOnly_best_mod,
+  growth_climOnly_best_mod = growth_climOnly_best_mod,
+  repro_climOnly_best_mod = repro_climOnly_best_mod,
+  nflrs_climOnly_best_mod = nflrs_climOnly_best_mod,
+  growth_var_climOnly_best_mod = growth_var_climOnly_best_mod,
+  growth_var_climOnly_best_mod_data = growth_var_climOnly_best_mod_data
+)
+
+mtOnly_model_list <- list(
+  surv_mtOnly_best_mod = surv_mtOnly_best_mod,
+  growth_mtOnly_best_mod = growth_mtOnly_best_mod,
+  repro_mtOnly_best_mod = repro_mtOnly_best_mod,
+  nflrs_mtOnly_best_mod = nflrs_mtOnly_best_mod,
+  growth_var_mtOnly_best_mod = growth_var_mtOnly_best_mod,
+  growth_var_mtOnly_best_mod_data = growth_var_mod_data_scaled
+)
+
+saveRDS(climOnly_model_list, paste0("r/modelFitResults/best_climOnly_mods_", Sys.Date(), ".RDS"))
+saveRDS(mtOnly_model_list, paste0("r/modelFitResults/best_mtOnly_mods_", Sys.Date(), ".RDS"))
+```

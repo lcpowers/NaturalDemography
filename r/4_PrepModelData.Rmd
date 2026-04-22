@@ -33,47 +33,44 @@ pop_topo_vars <- c("pop_slp","pop_est","pop_nrt")
 surv_mod_data <- surv %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
   left_join(clim, by = c("site", "pop", "year")) %>% 
-  left_join(pop_info)
+  left_join(pop_info) %>%
+  mutate(pop.set.year = paste0(pop.set,"_",year))
 
 surv_mod_data_scaled <- surv_mod_data %>%
   mutate(across(all_of(c(mt_vars, clim_vars,pop_topo_vars,"log_size_t0")), ~ as.numeric(scale(.))), 
          year = factor(year)) %>%
   dplyr::select(-log_size) %>%
-  na.omit() %>%
-  mutate(site.pop = paste(site, pop, sep = "."))
+  na.omit() 
 
 growth_mod_data <- growth %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
   left_join(clim, by = c("site", "pop", "year")) %>% 
-  left_join(pop_info)
+  left_join(pop_info) %>%
+  mutate(pop.set.year = paste0(pop.set,"_",year))
 
 growth_mod_data_scaled <- growth_mod_data %>%
   mutate(across(all_of(c(mt_vars, clim_vars,pop_topo_vars,"log_size_t0")), ~ as.numeric(scale(.))), year = factor(year)) %>%
   dplyr::select(-log_size) %>%
-  na.omit() %>%
-  mutate(site.pop = paste(site, pop, sep = "."))
+  na.omit() 
 
 repro_mod_data <- repro %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
   left_join(clim, by = c("site", "pop", "year")) %>% 
-  left_join(pop_info)
+  left_join(pop_info) %>%
+  mutate(pop.set.year = paste0(pop.set,"_",year))
 
 repro_mod_data_scaled <- repro_mod_data %>%
   mutate(across(all_of(c(mt_vars, clim_vars,pop_topo_vars,"log_size_t0")), ~ as.numeric(scale(.))), year = factor(year)) %>%
   dplyr::select(-log_size) %>%
-  na.omit() %>%
-  mutate(site.pop = paste(site, pop, sep = "."))
+  na.omit() 
 
 nflrs_mod_data_scaled <- repro_mod_data %>%
   filter(flowered == 1) %>%
   mutate(across(all_of(c(mt_vars, clim_vars,"log_size_t0")), ~ as.numeric(scale(.))), year = factor(year)) %>%
   dplyr::select(-log_size) %>%
   mutate(total_flrs = round(total_flrs)) %>%
-  na.omit() %>%
-  mutate(site.pop = paste(site, pop, sep = "."),
-         obs_id = seq_len(n()))
+  na.omit() 
 ```
-
 
 ```{r write_data}
 mod_data <- list(
