@@ -24,7 +24,7 @@ microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv")
 
 mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt")]
 
-clim <- read_csv("mod_data/climate/full_climate.csv") 
+clim <- read_csv("mod_data/full_climate.csv") 
 clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
 
 pop_info <- read_csv("raw_data/pop_info/pop_info_slopeAspect.csv")
