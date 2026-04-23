@@ -226,6 +226,8 @@ length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 
 growth - 69% @ 5:26
 90% @ 650
+
+started repro @ 7:53
 ```{r clim_mt_dredge}
 clust <- makeCluster(50, type = "FORK")
 
@@ -261,7 +263,6 @@ saveRDS(clim_mt_dredge_top20, paste0("output/dredge_tables/clim_mt_dredge_top20_
 
 ```
 
-
 ```{r growth_var_clim_mt_dredge}
 growth_var_mod_data_scaled <- growth_mod_data_scaled %>%
   mutate(growth_resid.sq = residuals(growth_clim_mt_best_mod)^2)
@@ -284,8 +285,8 @@ growth_var_clim_mt_best_mod_data <- growth_var_mod_data_scaled
 
 ```{r save_clim_mt_models}
 clim_mt_dredge_top20 <- list(
-  surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt) %>% slice_head(n = 20),
-  growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt) %>% slice_head(n = 20),
+  # surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt) %>% slice_head(n = 20),
+  # growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt) %>% slice_head(n = 20),
   growth_var_dredge_clim_mt = as.data.frame(dredge_growth_var_clim_mt) %>% slice_head(n = 20),
   repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt) %>% slice_head(n = 20),
   nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt) %>% slice_head(n = 20)
