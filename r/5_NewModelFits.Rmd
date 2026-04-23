@@ -113,6 +113,8 @@ clim_model_list <- list(
 
 saveRDS(clim_dredge_top10, paste0("output/dredge_tables/clim_dredge_top20_", Sys.Date(), ".RDS"))
 saveRDS(clim_model_list, paste0("best_models/best_clim_mods_", Sys.Date(), ".RDS"))
+
+readRDS("best_models/best_clim_mods_2026-04-22.RDS") %>% list2env(.GlobalEnv)
 ```
 
 # --------------
@@ -214,23 +216,51 @@ nflrs_clim_mt_mod <- glmer.nb(nflrs_clim_mt_formula, data = nflrs_mod_data_scale
 length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 ```
 
+4% at 6PM 
+5% at 6:04
+8% @ 6:15
+20% @ 7:04
+35% @ 8:10
+42% @ 8:42
+66% @ 10:48
+
+growth - 69% @ 5:26
+90% @ 650
 ```{r clim_mt_dredge}
 clust <- makeCluster(50, type = "FORK")
 
-dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2)
-dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2)
+# dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2)
+# dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2)
 dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2)
 dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2)
 
 stopCluster(clust)
 ```
 
+
 ```{r clim_mt_model_selection}
-surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 1)[[1]], nAGQ = 1)
+surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 2)[[1]], nAGQ = 1)
 growth_clim_mt_best_mod <- get.models(dredge_growth_clim_mt, subset = 1)[[1]]
-repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = 1)[[1]], nAGQ = 1)
-nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = 1)[[1]], nAGQ = 1)
+repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = )[[1]], nAGQ = 1)
+nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = )[[1]], nAGQ = 1)
 ```
+
+
+```{r}
+clim_mt_short_model_list <- list(
+  surv_clim_mt_best_mod = surv_clim_mt_best_mod,
+  growth_clim_mt_best_mod = growth_clim_mt_best_mod
+)
+saveRDS(clim_mt_short_model_list, paste0("best_models/best_short_clim_mt_mods_", Sys.Date(), ".RDS"))
+
+clim_mt_dredge_top20 <- list(
+  surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt) %>% slice_head(n = 20),
+  growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt) %>% slice_head(n = 20)
+)
+saveRDS(clim_mt_dredge_top20, paste0("output/dredge_tables/clim_mt_dredge_top20_", Sys.Date(), ".RDS"))
+
+```
+
 
 ```{r growth_var_clim_mt_dredge}
 growth_var_mod_data_scaled <- growth_mod_data_scaled %>%
