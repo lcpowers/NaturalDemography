@@ -30,8 +30,7 @@ mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","e
 # --------------
 # Clim models
 ```{r clim_global_models}
-
-clim_pred_vars <- c("log_size_t0*(pop_slp + ann_snow_days + I(ann_snow_days^2) + win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
+clim_pred_vars <- c("log_size_t0*(pop_slp +  win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
                                 gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) + (1|pop.set.year)")
 
 surv_clim_formula <- as.formula(paste0("surv ~ ",clim_pred_vars))
@@ -50,31 +49,28 @@ nflrs_clim_mod <- glmer.nb(nflrs_clim_formula, data = nflrs_mod_data_scaled, nAG
 
 ```{r clim_dredge}
 clim_dredge_subset <- expression(
-   !(ann_snow_days & win_meanT_mean) &
-   dc(ann_snow_days, `I(ann_snow_days^2)`) &
    dc(gs_meanT_mean, `I(gs_meanT_mean^2)`) &
    dc(gs_meanT_range, `I(gs_meanT_range^2)`) &
    dc(win_meanT_mean, `I(win_meanT_mean^2)`) &
    dc(win_meanT_range, `I(win_meanT_range^2)`) & 
-   (ann_snow_days + gs_meanT_mean +  gs_meanT_range + win_meanT_mean + win_meanT_range) <= 3
+   (gs_meanT_mean +  gs_meanT_range + win_meanT_mean + win_meanT_range) <= 3
    )
 
 # Note: must not name the cluster 'cl', causes a name collision that breaks parallel
 clust <- makeCluster(50, type = "FORK")
 
-dredge_surv_clim <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
-dredge_growth_clim <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
-dredge_repro_clim <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
-dredge_nflrs_clim <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
+dredge_surv_clim <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:50,]
+dredge_growth_clim <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:50,]
+dredge_repro_clim <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:50,]
+dredge_nflrs_clim <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:50,]
 stopCluster(clust)
 ```
 
 ```{r clim_model_selection}
-surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = 1)[[1]], nAGQ = 1)
-growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 2)[[1]] # includes win range^2 which is in lots of the best
-repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = 1)[[1]], nAGQ = 1)
+surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
+growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 1)[[1]] 
+repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 nflrs_clim_best_mod <- update(get.models(dredge_nflrs_clim, subset = 1)[[1]], nAGQ = 1)
-performance::check_overdispersion(nflrs_clim_best_mod) 
 ```
 
 ```{r growth_var_clim_dredge}
@@ -84,10 +80,10 @@ growth_var_clim_formula <- as.formula(paste0("growth_resid.sq ~ ", clim_pred_var
 growth_var_clim_mod <- lmer(growth_var_clim_formula, data = growth_var_mod_data_scaled, REML = FALSE, na.action = na.fail)
 
 clust <- makeCluster(30, type = "FORK")
-dredge_growth_var_clim <- dredge(growth_var_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
+dredge_growth_var_clim <- dredge(growth_var_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
 stopCluster(clust)
 
-growth_var_clim_best_mod <- get.models(dredge_growth_var_clim, subset = 1)[[1]]
+growth_var_clim_best_mod <- get.models(dredge_growth_var_clim, subset =1)[[1]]
 growth_var_clim_best_mod_data <- growth_var_mod_data_scaled
 ```
 
@@ -113,7 +109,7 @@ clim_model_list <- list(
 saveRDS(clim_dredge_top20, paste0("output/dredge_tables/clim_dredge_top20_", Sys.Date(), ".RDS"))
 saveRDS(clim_model_list, paste0("best_models/best_clim_mods_", Sys.Date(), ".RDS"))
 
-readRDS("best_models/best_clim_mods_2026-04-22.RDS") %>% list2env(.GlobalEnv)
+# readRDS("best_models/best_clim_mods_2026-04-24.RDS") %>% list2env(.GlobalEnv)
 ```
 
 # --------------
@@ -162,9 +158,8 @@ for (mt_var in mt_vars) {
 # Set MT vars per vital rate based on screening results above
 surv_mt_vars <- c("nrt_25","tpi_25")
 growth_mt_vars <- c("tri_25","plcv_25")
-repro_mt_vars <- c("est_25","prcv_25")
-nflrs_mt_vars <- c("tri_25","tpi_25","nrt_25")
-
+repro_mt_vars <- c("est_25","prcv_25") # prcv is the smallest positive delta
+nflrs_mt_vars <- c("tri_25","tpi_25")
 ```
 
 # --------------
@@ -178,7 +173,7 @@ nflrs_clim_fixed <- intersect(attr(terms(nflrs_clim_best_mod), "term.labels"), a
 growth_var_clim_fixed <- intersect(attr(terms(growth_var_clim_best_mod), "term.labels"), all_clim_terms)
 
 surv_clim_mt_formula <- as.formula(paste(
-  "surv ~ log_size_t0 * (",
+  "surv ~ log_size_t0 * (pop_slp + ",
   paste(c(surv_clim_fixed, surv_mt_vars), collapse = " + "), ") + (",
   paste(surv_clim_fixed, collapse = " + "), ") * (",
   paste(surv_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
@@ -188,7 +183,7 @@ surv_clim_mt_mod <- glmer(surv_clim_mt_formula, family = binomial, data = surv_m
 length(attr(terms(surv_clim_mt_mod), "term.labels"))
 
 growth_clim_mt_formula <- as.formula(paste(
-  "growth ~ log_size_t0 * (",
+  "growth ~ log_size_t0 * (pop_slp + ",
   paste(c(growth_clim_fixed, growth_mt_vars), collapse = " + "), ") + (",
   paste(growth_clim_fixed, collapse = " + "), ") * (",
   paste(growth_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
@@ -197,7 +192,7 @@ growth_clim_mt_mod <- lmer(growth_clim_mt_formula, data = growth_mod_data_scaled
 length(attr(terms(growth_clim_mt_mod), "term.labels"))
 
 repro_clim_mt_formula <- as.formula(paste(
-  "flowered ~ log_size_t0 * (",
+  "flowered ~ log_size_t0 * (pop_slp + ",
   paste(c(repro_clim_fixed, repro_mt_vars), collapse = " + "), ") + (",
   paste(repro_clim_fixed, collapse = " + "), ") * (",
   paste(repro_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
@@ -206,7 +201,7 @@ repro_clim_mt_mod <- glmer(repro_clim_mt_formula, family = binomial, data = repr
 length(attr(terms(repro_clim_mt_mod), "term.labels"))
 
 nflrs_clim_mt_formula <- as.formula(paste(
-  "total_flrs ~ log_size_t0 * (",
+  "total_flrs ~ log_size_t0 * (pop_slp + ",
   paste(c(nflrs_clim_fixed, nflrs_mt_vars), collapse = " + "), ") + (",
   paste(nflrs_clim_fixed, collapse = " + "), ") * (",
   paste(nflrs_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
@@ -215,38 +210,34 @@ nflrs_clim_mt_mod <- glmer.nb(nflrs_clim_mt_formula, data = nflrs_mod_data_scale
 length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 ```
 
+# Started surv @ 15:45 April 24
 ```{r clim_mt_dredge}
 clust <- makeCluster(50, type = "FORK")
-dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2)
-stopCluster(clust)
-surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 2)[[1]], nAGQ = 1)
+dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 2)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 surv_output <- list(surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt[1:20,]),
                     surv_clim_mt_best_mod = surv_clim_mt_best_mod)
 saveRDS(surv_output, paste0("output/singleModelOutput/surv_clim_mt_", Sys.Date(), ".RDS"))
 
-clust <- makeCluster(50, type = "FORK")
-dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2)
-stopCluster(clust)
+dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
 growth_clim_mt_best_mod <- get.models(dredge_growth_clim_mt, subset = 1)[[1]]
 growth_output <- list(growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt[1:20,]),
                       growth_clim_mt_best_mod = growth_clim_mt_best_mod)
 saveRDS(growth_output, paste0("output/singleModelOutput/growth_clim_mt_", Sys.Date(), ".RDS"))
 
-clust <- makeCluster(50, type = "FORK")
-dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2)
-stopCluster(clust)
-repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = 1)[[1]], nAGQ = 1)
+dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 repro_output <- list(repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt[1:20,]),
                       repro_clim_mt_best_mod = repro_clim_mt_best_mod)
 saveRDS(repro_output, paste0("output/singleModelOutput/repro_clim_mt_", Sys.Date(), ".RDS"))
 
-clust <- makeCluster(50, type = "FORK")
-dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2)
-stopCluster(clust)
+
+dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
 nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = 1)[[1]], nAGQ = 1)
 nflrs_output <- list(nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt[1:20,]),
                       nflrs_clim_mt_best_mod = nflrs_clim_mt_best_mod)
 saveRDS(nflrs_output, paste0("output/singleModelOutput/nflrs_clim_mt_", Sys.Date(), ".RDS"))
+stopCluster(clust)
 ```
 
 ```{r growth_var_clim_mt_dredge}
@@ -266,7 +257,7 @@ for (mt_var in mt_vars) {
 growth_var_mt_vars <- c("prcv_25","tpi_25","plcv_25")
 
 growth_var_clim_mt_formula <- as.formula(paste(
-  "growth_resid.sq ~ log_size_t0 * (",
+  "growth_resid.sq ~ log_size_t0 * (pop_slp + ",
   paste(c(growth_var_clim_fixed, growth_var_mt_vars), collapse = " + "), ") + (",
   paste(growth_var_clim_fixed, collapse = " + "), ") * (",
   paste(growth_var_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
