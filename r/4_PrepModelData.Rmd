@@ -19,16 +19,22 @@ conflicts_prefer(dplyr::filter)
 ```{r load_data}
 
 readRDS("mod_data/demog/mod_demog_data.rds") %>% list2env(.GlobalEnv)
-
 microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv",col_types = cols(plantID=col_character()))
-
 mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID", "elv_pt", "aspect.cat")]
-
 clim <- read_csv("mod_data/full_climate.csv") 
 clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
 
+pred_vars <- c("log_size_t0",clim_vars,mt_vars)
+
 pop_info <- read_csv("raw_data/pop_info/pop_info_slopeAspect.csv") %>%
   dplyr::select(pop,site, pop.set)
+
+custom_scale_fun <- function(col){
+  col_min <- min(col,na.rm=T)
+  col_sd <- sd(col,na.rm=T)
+  new_col <- (col - col_min)/col_sd
+  return(new_col)
+} 
 
 surv_mod_data <- surv %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
@@ -39,8 +45,8 @@ surv_mod_data <- surv %>%
   na.omit() 
 
 surv_mod_data_scaled <- surv_mod_data %>%
-  mutate(across(all_of(c(mt_vars, clim_vars, "log_size_t0")), ~ as.numeric(scale(.))), 
-         year = factor(year))
+  mutate(across(all_of(pred_vars), ~ custom_scale_fun(.x)), 
+         year = as.character(year))
 
 growth_mod_data <- growth %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
@@ -51,7 +57,8 @@ growth_mod_data <- growth %>%
   na.omit() 
 
 growth_mod_data_scaled <- growth_mod_data %>%
-  mutate(across(all_of(c(mt_vars, clim_vars, "log_size_t0")), ~ as.numeric(scale(.))), year = factor(year)) 
+  mutate(across(all_of(pred_vars), ~ custom_scale_fun(.x)), 
+         year = as.character(year))
 
 repro_mod_data <- repro %>%
   left_join(microtopo, by = c("site", "pop", "plantID")) %>%
@@ -62,7 +69,8 @@ repro_mod_data <- repro %>%
   na.omit() 
 
 repro_mod_data_scaled <- repro_mod_data %>%
-  mutate(across(all_of(c(mt_vars, clim_vars, "log_size_t0")), ~ as.numeric(scale(.))), year = factor(year))
+  mutate(across(all_of(pred_vars), ~ custom_scale_fun(.x)), 
+         year = as.character(year))
  
 nflrs_mod_data_scaled <- repro_mod_data %>%
   filter(flowered == 1) %>%
