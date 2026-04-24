@@ -867,16 +867,18 @@ all_climate <- bind_rows(
          year = year(date),
          clim_year = ifelse(month %in% c(9, 10, 11, 12), year + 1, year),
          winter = month %in% c(11, 12, 1, 2, 3),
-         grwszn = month %in% c(5, 6, 7),
-         snowcover = ifelse(meanT > -2 & meanT < 2, 1, 0))
+         grwszn = month %in% c(5, 6, 7,8))
 
 gdd_basetemp <- 12
 cdd_basetemp <- -10
+gdd_max <- 10
+win_coldStress <- -10
+gs_meanT_global <- mean(all_climate$meanT[all_climate$grwszn])
+
 clim_summary <- all_climate %>%
   group_by(site, pop, year = clim_year) %>%
   summarize(
     # Annual
-    ann_snow_days   = sum(snowcover, na.rm = TRUE),
     # ann_swe_total = sum(snotel_swe, na.rm = TRUE),
     # ann_meanT_mean  = mean(meanT, na.rm = TRUE),
     # ann_meanT_min   = min(meanT, na.rm = TRUE),
@@ -884,22 +886,26 @@ clim_summary <- all_climate %>%
     # ann_meanT_range = max(meanT, na.rm = TRUE) - min(meanT, na.rm = TRUE),
 
     # Winter (Nov-Mar)
-    # win_snow_days   = sum(snowcover[winter], na.rm = TRUE),
     # win_swe_total   = sum(snotel_swe[winter], na.rm = TRUE),
     win_meanT_mean  = mean(meanT[winter], na.rm = TRUE),
+    win_meanT_sd  = sd(meanT[winter], na.rm = TRUE),
     # win_meanT_min   = min(meanT[winter], na.rm = TRUE),
     # win_meanT_max   = max(meanT[winter], na.rm = TRUE),
     # win_cdd = sum(pmax(cdd_basetemp - meanT[winter], 0), na.rm = TRUE),
-    win_meanT_range = max(meanT[winter], na.rm = TRUE) - min(meanT[winter], na.rm = TRUE),
+    # win_coldStress = sum(pmax(win_coldStress - meanT[winter], 0), na.rm = TRUE),
+    # win_meanT_range  = quantile(meanT[winter],0.9, na.rm = TRUE) - quantile(meanT[winter],0.1, na.rm = TRUE),
 
     # Growing season (May-Jul)
-    # gs_snow_days    = sum(snowcover[grwszn], na.rm = TRUE),
     # gs_swe_total    = sum(snotel_swe[grwszn], na.rm = TRUE),
     gs_meanT_mean   = mean(meanT[grwszn], na.rm = TRUE),
+    gs_meanT_sd  = sd(meanT[grwszn], na.rm = TRUE),
+    # gs_meanT_max90  = quantile(meanT[grwszn],0.9, na.rm = TRUE),
+    # gs_heatAcc = sum(pmax(meanT[grwszn] - gs_meanT_global, 0), na.rm = TRUE),
     # gs_meanT_min    = min(meanT[grwszn], na.rm = TRUE),
     # gs_meanT_max    = max(meanT[grwszn], na.rm = TRUE),
     # gs_gdd = sum(pmax(meanT[grwszn] - gdd_basetemp, 0), na.rm = TRUE),
-    gs_meanT_range  = max(meanT[grwszn], na.rm = TRUE) - min(meanT[grwszn], na.rm = TRUE),
+    # gs_meanT_range  = max(meanT[grwszn], na.rm = TRUE) - min(meanT[grwszn], na.rm = TRUE),
+    # gs_meanT_range  = quantile(meanT[grwszn],0.9, na.rm = TRUE) - quantile(meanT[grwszn],0.1, na.rm = TRUE),
 
     .groups = "drop"
   )
@@ -910,18 +916,6 @@ clim_summary %>%
   cor(use = "pairwise.complete.obs") %>%
   corrplot::corrplot(tl.cex = 0.6, method = "number", type = "upper")
 
-for(s in unique(clim_summary$site)){
-  clim_summary %>%
-    filter(site == s) %>%
-    select(where(is.numeric)) %>%
-    select(-year) %>% 
-    cor(use = "pairwise.complete.obs") %>%
-    corrplot::corrplot(method = "number", tl.cex = 0.7, type = "upper",
-                       title = s, mar = c(0,0,2,0))
-}
-
 write_csv(clim_summary, "mod_data/full_climate.csv")
 
-# clim_summary <- read_csv("mod_data/full_climate.csv")
 ```
-
