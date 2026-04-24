@@ -888,27 +888,29 @@ clim_summary <- all_climate %>%
     # Winter (Nov-Mar)
     # win_swe_total   = sum(snotel_swe[winter], na.rm = TRUE),
     win_meanT_mean  = mean(meanT[winter], na.rm = TRUE),
-    win_meanT_sd  = sd(meanT[winter], na.rm = TRUE),
+    # win_meanT_sd  = sd(meanT[winter], na.rm = TRUE),
     # win_meanT_min   = min(meanT[winter], na.rm = TRUE),
     # win_meanT_max   = max(meanT[winter], na.rm = TRUE),
     # win_cdd = sum(pmax(cdd_basetemp - meanT[winter], 0), na.rm = TRUE),
     # win_coldStress = sum(pmax(win_coldStress - meanT[winter], 0), na.rm = TRUE),
-    # win_meanT_range  = quantile(meanT[winter],0.9, na.rm = TRUE) - quantile(meanT[winter],0.1, na.rm = TRUE),
+    # win_meanT_range1090  = quantile(meanT[winter],0.9, na.rm = TRUE) - quantile(meanT[winter],0.1, na.rm = TRUE),
+    win_meanT_range  = max(meanT[winter], na.rm = TRUE) - min(meanT[winter], na.rm = TRUE),
 
     # Growing season (May-Jul)
     # gs_swe_total    = sum(snotel_swe[grwszn], na.rm = TRUE),
     gs_meanT_mean   = mean(meanT[grwszn], na.rm = TRUE),
-    gs_meanT_sd  = sd(meanT[grwszn], na.rm = TRUE),
+    # gs_meanT_sd  = sd(meanT[grwszn], na.rm = TRUE),
     # gs_meanT_max90  = quantile(meanT[grwszn],0.9, na.rm = TRUE),
     # gs_heatAcc = sum(pmax(meanT[grwszn] - gs_meanT_global, 0), na.rm = TRUE),
     # gs_meanT_min    = min(meanT[grwszn], na.rm = TRUE),
     # gs_meanT_max    = max(meanT[grwszn], na.rm = TRUE),
     # gs_gdd = sum(pmax(meanT[grwszn] - gdd_basetemp, 0), na.rm = TRUE),
-    # gs_meanT_range  = max(meanT[grwszn], na.rm = TRUE) - min(meanT[grwszn], na.rm = TRUE),
-    # gs_meanT_range  = quantile(meanT[grwszn],0.9, na.rm = TRUE) - quantile(meanT[grwszn],0.1, na.rm = TRUE),
+    gs_meanT_range  = max(meanT[grwszn], na.rm = TRUE) - min(meanT[grwszn], na.rm = TRUE),
+    # gs_meanT_range1090  = quantile(meanT[grwszn],0.9, na.rm = TRUE) - quantile(meanT[grwszn],0.1, na.rm = TRUE),
 
     .groups = "drop"
   )
+
 
 clim_summary %>%
   select(where(is.numeric)) %>%
