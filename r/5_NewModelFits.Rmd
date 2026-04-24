@@ -60,12 +60,13 @@ clim_dredge_subset <- expression(
    )
 
 # Note: must not name the cluster 'cl', causes a name collision that breaks parallel
-clust <- makeCluster(5, type = "FORK")
+clust <- makeCluster(50, type = "FORK")
 
-dredge_surv_clim <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
-dredge_growth_clim <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
-dredge_repro_clim <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
-dredge_nflrs_clim <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)
+dredge_surv_clim <- dredge(surv_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
+dredge_growth_clim <- dredge(growth_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
+dredge_repro_clim <- dredge(repro_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
+dredge_nflrs_clim <- dredge(nflrs_clim_mod, cluster = clust, fixed = c("log_size_t0"), trace = 2, subset = clim_dredge_subset)[1:100,]
+stopCluster(clust)
 ```
 
 ```{r clim_model_selection}
@@ -163,7 +164,7 @@ surv_mt_vars <- c("nrt_25","tpi_25")
 growth_mt_vars <- c("tri_25","plcv_25")
 repro_mt_vars <- c("est_25","prcv_25")
 nflrs_mt_vars <- c("tri_25","tpi_25","nrt_25")
-# growth_var_mt_vars <- c()
+
 ```
 
 # --------------
@@ -215,7 +216,6 @@ length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 ```
 
 ```{r clim_mt_dredge}
-
 clust <- makeCluster(50, type = "FORK")
 dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2)
 stopCluster(clust)
@@ -235,7 +235,7 @@ saveRDS(growth_output, paste0("output/singleModelOutput/growth_clim_mt_", Sys.Da
 clust <- makeCluster(50, type = "FORK")
 dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2)
 stopCluster(clust)
-repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = )[[1]], nAGQ = 1)
+repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = 1)[[1]], nAGQ = 1)
 repro_output <- list(repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt[1:20,]),
                       repro_clim_mt_best_mod = repro_clim_mt_best_mod)
 saveRDS(repro_output, paste0("output/singleModelOutput/repro_clim_mt_", Sys.Date(), ".RDS"))
@@ -243,7 +243,7 @@ saveRDS(repro_output, paste0("output/singleModelOutput/repro_clim_mt_", Sys.Date
 clust <- makeCluster(50, type = "FORK")
 dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2)
 stopCluster(clust)
-nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = )[[1]], nAGQ = 1)
+nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = 1)[[1]], nAGQ = 1)
 nflrs_output <- list(nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt[1:20,]),
                       nflrs_clim_mt_best_mod = nflrs_clim_mt_best_mod)
 saveRDS(nflrs_output, paste0("output/singleModelOutput/nflrs_clim_mt_", Sys.Date(), ".RDS"))
@@ -253,6 +253,18 @@ saveRDS(nflrs_output, paste0("output/singleModelOutput/nflrs_clim_mt_", Sys.Date
 growth_var_mod_data_scaled <- growth_mod_data_scaled %>%
   mutate(growth_resid.sq = residuals(growth_clim_mt_best_mod)^2)
 
+# growth
+growth_base <- growth_var_clim_best_mod
+base_AICc <- AICc(growth_base) %>% round(., 2)
+for (mt_var in mt_vars) {
+  mod_new <- update(growth_base, as.formula(paste(". ~ . +", mt_var)))
+  new_AICc <- AICc(mod_new) %>% round(., 2)
+  cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
+  cat(new_AICc - base_AICc, "\n")
+}
+
+growth_var_mt_vars <- c("prcv_25","tpi_25","plcv_25")
+
 growth_var_clim_mt_formula <- as.formula(paste(
   "growth_resid.sq ~ log_size_t0 * (",
   paste(c(growth_var_clim_fixed, growth_var_mt_vars), collapse = " + "), ") + (",
@@ -260,8 +272,10 @@ growth_var_clim_mt_formula <- as.formula(paste(
   paste(growth_var_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
 ))
 growth_var_clim_mt_mod <- lmer(growth_var_clim_mt_formula, data = growth_var_mod_data_scaled, REML = FALSE)
+length(attr(terms(growth_var_clim_mt_mod), "term.labels"))
 
-clust <- makeCluster(30, type = "FORK")
+
+clust <- makeCluster(50, type = "FORK")
 dredge_growth_var_clim_mt <- dredge(growth_var_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_var_clim_fixed), trace = 2)
 stopCluster(clust)
 
@@ -271,11 +285,11 @@ growth_var_clim_mt_best_mod_data <- growth_var_mod_data_scaled
 
 ```{r save_clim_mt_models}
 clim_mt_dredge_top20 <- list(
-  surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt) %>% slice_head(n = 20),
-  growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt) %>% slice_head(n = 20),
-  growth_var_dredge_clim_mt = as.data.frame(dredge_growth_var_clim_mt) %>% slice_head(n = 20),
-  repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt) %>% slice_head(n = 20),
-  nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt) %>% slice_head(n = 20)
+  surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt[1:20,]),
+  growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt[1:20,]),
+  growth_var_dredge_clim_mt = as.data.frame(dredge_growth_var_clim_mt[1:20,]),
+  repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt[1:20,]),
+  nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt[1:20,])
 )
 
 clim_mt_model_list <- list(
@@ -286,7 +300,6 @@ clim_mt_model_list <- list(
   growth_var_clim_mt_best_mod = growth_var_clim_mt_best_mod,
   growth_var_clim_mt_best_mod_data = growth_var_clim_mt_best_mod_data
 )
-
-saveRDS(clim_mt_dredge_top20, paste0("output/dredge_tables/clim_mt_dredge_top20_", Sys.Date(), ".RDS"))
 saveRDS(clim_mt_model_list, paste0("best_models/best_clim_mt_mods_", Sys.Date(), ".RDS"))
+saveRDS(clim_mt_dredge_top20, paste0("output/dredge_tables/clim_mt_dredge_top20_", Sys.Date(), ".RDS"))
 ```
