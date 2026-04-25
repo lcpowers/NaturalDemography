@@ -67,7 +67,7 @@ stopCluster(clust)
 
 ```{r clim_model_selection}
 surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
-growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 1)[[1]] 
+growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 1)[[1]] # simpler and I need that
 repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 nflrs_clim_best_mod <- update(get.models(dredge_nflrs_clim, subset = 1)[[1]], nAGQ = 1)
 ```
@@ -108,7 +108,7 @@ clim_model_list <- list(
 saveRDS(clim_dredge_top20, paste0("output/dredge_tables/clim_dredge_top20_", Sys.Date(), ".RDS"))
 saveRDS(clim_model_list, paste0("best_models/best_clim_mods_", Sys.Date(), ".RDS"))
 
-# readRDS("best_models/best_clim_mods_2026-04-24.RDS") %>% list2env(.GlobalEnv)
+readRDS("best_models/best_clim_mods_2026-04-25.RDS") %>% list2env(.GlobalEnv)
 ```
 
 # --------------
@@ -121,99 +121,98 @@ repro_clim_fixed <- intersect(attr(terms(repro_clim_best_mod), "term.labels"), a
 nflrs_clim_fixed <- intersect(attr(terms(nflrs_clim_best_mod), "term.labels"), all_clim_terms)
 growth_var_clim_fixed <- intersect(attr(terms(growth_var_clim_best_mod), "term.labels"), all_clim_terms)
 
+# nrt_25 and est_25 are included by default in the next phase, so skip them here
+screen_mt_vars <- setdiff(mt_vars, c("nrt_25", "est_25"))
+
 # survival
-surv_base <-  as.formula(paste0("surv ~ log_size_t0 * (pop_slp + nrt_25 + I(nrt_25^2) + est_25 + I(est_25^2) + ",paste(surv_clim_fixed,collapse = "+"),")"),
-                         paste0("(",paste(surv_clim_fixed,collapse = "+"),")*(nrt_25 + I(nrt_25^2) + est_25 + I(est_25^2))")
-                         )
-surv_base
+surv_base <- update(surv_clim_best_mod, nAGQ = 0)
 base_AICc <- AICc(surv_base) %>% round(., 2)
-
-
-for (mt_var in mt_vars) {
-  
-
-  
-  mod_new <- update(surv_base, as.formula(paste(". ~ . +", mt_var)))
+for (mt_var in screen_mt_vars) {
+  mod_new <- update(surv_base, as.formula(paste0(". ~ . + log_size_t0 * ", mt_var)))
   new_AICc <- AICc(mod_new) %>% round(., 2)
-  cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
-  cat(new_AICc - base_AICc, "\n")
+  cat(mt_var, "new:", new_AICc, "base:", base_AICc, "delta:", new_AICc - base_AICc, "\n")
 }
 
 # growth
 growth_base <- growth_clim_best_mod
 base_AICc <- AICc(growth_base) %>% round(., 2)
-for (mt_var in mt_vars) {
-  mod_new <- update(growth_base, as.formula(paste(". ~ . +", mt_var)))
+for (mt_var in screen_mt_vars) {
+  mod_new <- update(growth_base, as.formula(paste0(". ~ . + log_size_t0 * ", mt_var)))
   new_AICc <- AICc(mod_new) %>% round(., 2)
-  cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
-  cat(new_AICc - base_AICc, "\n")
+  cat(mt_var, "new:", new_AICc, "base:", base_AICc, "delta:", new_AICc - base_AICc, "\n")
 }
 
 # repro
 repro_base <- update(repro_clim_best_mod, nAGQ = 0)
 base_AICc <- AICc(repro_base) %>% round(., 2)
-for (mt_var in mt_vars) {
-  mod_new <- update(repro_base, as.formula(paste(". ~ . +", mt_var)))
+for (mt_var in screen_mt_vars) {
+  mod_new <- update(repro_base, as.formula(paste0(". ~ . + log_size_t0 * ", mt_var)))
   new_AICc <- AICc(mod_new) %>% round(., 2)
-  cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
-  cat(new_AICc - base_AICc, "\n")
+  cat(mt_var, "new:", new_AICc, "base:", base_AICc, "delta:", new_AICc - base_AICc, "\n")
 }
 
 # nflrs
 nflrs_base <- update(nflrs_clim_best_mod, nAGQ = 0)
 base_AICc <- AICc(nflrs_base) %>% round(., 2)
-for (mt_var in mt_vars) {
-  mod_new <- update(nflrs_base, as.formula(paste(". ~ . +", mt_var)))
+for (mt_var in screen_mt_vars) {
+  mod_new <- update(nflrs_base, as.formula(paste0(". ~ . + log_size_t0 * ", mt_var)))
   new_AICc <- AICc(mod_new) %>% round(., 2)
-  cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
-  cat(new_AICc - base_AICc, "\n")
+  cat(mt_var, "new:", new_AICc, "base:", base_AICc, "delta:", new_AICc - base_AICc, "\n")
 }
 
 # Set MT vars per vital rate based on screening results above
-surv_mt_vars <- c("nrt_25","tpi_25")
-growth_mt_vars <- c("tri_25","plcv_25")
-repro_mt_vars <- c("est_25","prcv_25") # prcv is the smallest positive delta
-nflrs_mt_vars <- c("tri_25","tpi_25")
+surv_mt_vars <- c("tpi_25")
+growth_mt_vars <- c("tri_25")
+# repro_mt_vars <- # c("est_25","prcv_25") # none
+nflrs_mt_vars <- c("tpi_25") # tri, plcv also possible, in that order
 ```
 
 # --------------
 # Combined clim + MT global models
 ```{r clim_mt_global_models}
-
-
-surv_clim_mt_formula <- as.formula(paste(
-  "surv ~ log_size_t0 * (pop_slp + ",
-  paste(c(surv_clim_fixed, surv_mt_vars), collapse = " + "), ") + (",
-  paste(surv_clim_fixed, collapse = " + "), ") * (",
-  paste(surv_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
+surv_clim_mt_formula <- as.formula(paste0(
+  "surv ~ log_size_t0 * (pop_slp + ", paste(c(surv_clim_fixed, surv_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25)",
+  " + (", paste(surv_clim_fixed, collapse = " + "), ")",
+  " * (", paste(surv_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
+  " + (nrt_25 + est_25)",
+  " * (", paste(surv_mt_vars, collapse = " + "), ")",
+  " + (1|pop.set.year)"
 ))
 surv_clim_mt_formula
 surv_clim_mt_mod <- glmer(surv_clim_mt_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
 length(attr(terms(surv_clim_mt_mod), "term.labels"))
 
-growth_clim_mt_formula <- as.formula(paste(
-  "growth ~ log_size_t0 * (pop_slp + ",
-  paste(c(growth_clim_fixed, growth_mt_vars), collapse = " + "), ") + (",
-  paste(growth_clim_fixed, collapse = " + "), ") * (",
-  paste(growth_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
+growth_clim_mt_formula <- as.formula(paste0(
+  "growth ~ log_size_t0 * (pop_slp + ", paste(c(growth_clim_fixed, growth_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25)",
+  " + (", paste(growth_clim_fixed, collapse = " + "), ")",
+  " * (", paste(growth_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
+  " + (nrt_25 + est_25)",
+  " * (", paste(growth_mt_vars, collapse = " + "), ")",
+  " + (1|pop.set.year)"
 ))
 growth_clim_mt_mod <- lmer(growth_clim_mt_formula, data = growth_mod_data_scaled, REML = FALSE)
 length(attr(terms(growth_clim_mt_mod), "term.labels"))
 
-repro_clim_mt_formula <- as.formula(paste(
-  "flowered ~ log_size_t0 * (pop_slp + ",
-  paste(c(repro_clim_fixed, repro_mt_vars), collapse = " + "), ") + (",
-  paste(repro_clim_fixed, collapse = " + "), ") * (",
-  paste(repro_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
+repro_clim_mt_formula <- as.formula(paste0(
+  "flowered ~ log_size_t0 * (pop_slp + ", paste(repro_clim_fixed, collapse = " + "),
+  " + nrt_25 + est_25)",
+  " + (", paste(repro_clim_fixed, collapse = " + "), ")",
+  " * (nrt_25 + est_25)",
+  " + (1|pop.set.year)"
 ))
 repro_clim_mt_mod <- glmer(repro_clim_mt_formula, family = binomial, data = repro_mod_data_scaled, nAGQ = 0)
 length(attr(terms(repro_clim_mt_mod), "term.labels"))
 
-nflrs_clim_mt_formula <- as.formula(paste(
-  "total_flrs ~ log_size_t0 * (pop_slp + ",
-  paste(c(nflrs_clim_fixed, nflrs_mt_vars), collapse = " + "), ") + (",
-  paste(nflrs_clim_fixed, collapse = " + "), ") * (",
-  paste(nflrs_mt_vars, collapse = " + "), ") + (1|pop.set.year)"
+nflrs_clim_mt_formula <- as.formula(paste0(
+  "total_flrs ~ log_size_t0 * (pop_slp + ", paste(c(nflrs_clim_fixed, nflrs_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25)",
+  " + (", paste(nflrs_clim_fixed, collapse = " + "), ")",
+  " * (", paste(nflrs_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
+  " + (nrt_25 + est_25)",
+  " * (", paste(nflrs_mt_vars, collapse = " + "), ")",
+  " + (1|pop.set.year)"
 ))
 nflrs_clim_mt_mod <- glmer.nb(nflrs_clim_mt_formula, data = nflrs_mod_data_scaled, nAGQ = 0)
 length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
