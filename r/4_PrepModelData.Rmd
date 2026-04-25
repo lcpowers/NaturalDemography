@@ -74,7 +74,8 @@ repro_mod_data_scaled <- repro_mod_data %>%
  
 nflrs_mod_data_scaled <- repro_mod_data %>%
   filter(flowered == 1) %>%
-  mutate(across(all_of(c(mt_vars, clim_vars,"log_size_t0")), ~ as.numeric(scale(.))), year = factor(year)) %>%
+  mutate(across(all_of(pred_vars), ~ custom_scale_fun(.x)), 
+         year = as.character(year)) %>% 
   mutate(total_flrs = round(total_flrs)) %>%
   na.omit() 
 ```
@@ -115,21 +116,21 @@ all_num_vars <- c("log_size_t0", clim_vars, mt_vars)
 surv_vars <- all_num_vars[all_num_vars %in% names(surv_mod_data)]
 surv_scale_params <- data.frame(
   var = surv_vars,
-  center = sapply(surv_vars, function(v) mean(surv_mod_data[[v]], na.rm = TRUE)),
+  center = sapply(surv_vars, function(v) min(surv_mod_data[[v]], na.rm = TRUE)),
   scale = sapply(surv_vars, function(v) sd(surv_mod_data[[v]], na.rm = TRUE))
 )
 
 growth_vars <- all_num_vars[all_num_vars %in% names(growth_mod_data)]
 growth_scale_params <- data.frame(
   var = growth_vars,
-  center = sapply(growth_vars, function(v) mean(growth_mod_data[[v]], na.rm = TRUE)),
+  center = sapply(growth_vars, function(v) min(growth_mod_data[[v]], na.rm = TRUE)),
   scale = sapply(growth_vars, function(v) sd(growth_mod_data[[v]], na.rm = TRUE))
 )
 
 repro_vars <- all_num_vars[all_num_vars %in% names(repro_mod_data)]
 repro_scale_params <- data.frame(
   var = repro_vars,
-  center = sapply(repro_vars, function(v) mean(repro_mod_data[[v]], na.rm = TRUE)),
+  center = sapply(repro_vars, function(v) min(repro_mod_data[[v]], na.rm = TRUE)),
   scale = sapply(repro_vars, function(v) sd(repro_mod_data[[v]], na.rm = TRUE))
 )
 
@@ -137,7 +138,7 @@ nflrs_mod_data <- repro_mod_data %>% filter(flowered == 1)
 nflrs_vars <- all_num_vars[all_num_vars %in% names(nflrs_mod_data)]
 nflrs_scale_params <- data.frame(
   var = nflrs_vars,
-  center = sapply(nflrs_vars, function(v) mean(nflrs_mod_data[[v]], na.rm = TRUE)),
+  center = sapply(nflrs_vars, function(v) min(nflrs_mod_data[[v]], na.rm = TRUE)),
   scale = sapply(nflrs_vars, function(v) sd(nflrs_mod_data[[v]], na.rm = TRUE))
 )
 
