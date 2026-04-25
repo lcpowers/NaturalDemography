@@ -221,26 +221,62 @@ length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 # Started surv @ 15:45 April 24
 ```{r clim_mt_dredge}
 clust <- makeCluster(50, type = "FORK")
-dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+
+# Candidate linear/quadratic clim pairs in the global formula
+quad_pairs <- list(c("gs_meanT_mean", "I(gs_meanT_mean^2)"),
+                   c("win_meanT_mean", "I(win_meanT_mean^2)"))
+
+# linear + quadratic clim interactions must enter/leave together
+# log_size_t0 appears first in the formula so its interaction term is "log_size_t0:<clim>";
+# nrt/est/screened-MT appear after clim, so those terms are "<clim>:<other>"
+surv_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% surv_clim_fixed))]
+surv_interactors <- c("nrt_25", "est_25", surv_mt_vars)
+surv_subset <- parse(text = paste(c("TRUE", unlist(lapply(surv_quad_pairs, function(p) c(
+  paste0("`log_size_t0:", p[1], "` == `log_size_t0:", p[2], "`"),
+  paste0("`", p[1], ":", surv_interactors, "` == `", p[2], ":", surv_interactors, "`")
+)))), collapse = " & "))
+dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2, m.lim = c(0,20),
+                              subset = surv_subset)[1:100,]
 surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 2)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 surv_output <- list(surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt[1:20,]),
                     surv_clim_mt_best_mod = surv_clim_mt_best_mod)
 saveRDS(surv_output, paste0("output/singleModelOutput/surv_clim_mt_", Sys.Date(), ".RDS"))
 
-dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+growth_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% growth_clim_fixed))]
+growth_interactors <- c("nrt_25", "est_25", growth_mt_vars)
+growth_subset <- parse(text = paste(c("TRUE", unlist(lapply(growth_quad_pairs, function(p) c(
+  paste0("`log_size_t0:", p[1], "` == `log_size_t0:", p[2], "`"),
+  paste0("`", p[1], ":", growth_interactors, "` == `", p[2], ":", growth_interactors, "`")
+)))), collapse = " & "))
+dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2, m.lim = c(0,20),
+                                subset = growth_subset)[1:100,]
 growth_clim_mt_best_mod <- get.models(dredge_growth_clim_mt, subset = 1)[[1]]
 growth_output <- list(growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt[1:20,]),
                       growth_clim_mt_best_mod = growth_clim_mt_best_mod)
 saveRDS(growth_output, paste0("output/singleModelOutput/growth_clim_mt_", Sys.Date(), ".RDS"))
 
-dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+repro_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% repro_clim_fixed))]
+repro_interactors <- c("nrt_25", "est_25")
+repro_subset <- parse(text = paste(c("TRUE", unlist(lapply(repro_quad_pairs, function(p) c(
+  paste0("`log_size_t0:", p[1], "` == `log_size_t0:", p[2], "`"),
+  paste0("`", p[1], ":", repro_interactors, "` == `", p[2], ":", repro_interactors, "`")
+)))), collapse = " & "))
+dredge_repro_clim_mt <- dredge(repro_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", repro_clim_fixed), trace = 2, m.lim = c(0,20),
+                               subset = repro_subset)[1:100,]
 repro_clim_mt_best_mod <- update(get.models(dredge_repro_clim_mt, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 repro_output <- list(repro_dredge_clim_mt = as.data.frame(dredge_repro_clim_mt[1:20,]),
                       repro_clim_mt_best_mod = repro_clim_mt_best_mod)
 saveRDS(repro_output, paste0("output/singleModelOutput/repro_clim_mt_", Sys.Date(), ".RDS"))
 
 
-dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2, m.lim = c(0,20))[1:100,]
+nflrs_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% nflrs_clim_fixed))]
+nflrs_interactors <- c("nrt_25", "est_25", nflrs_mt_vars)
+nflrs_subset <- parse(text = paste(c("TRUE", unlist(lapply(nflrs_quad_pairs, function(p) c(
+  paste0("`log_size_t0:", p[1], "` == `log_size_t0:", p[2], "`"),
+  paste0("`", p[1], ":", nflrs_interactors, "` == `", p[2], ":", nflrs_interactors, "`")
+)))), collapse = " & "))
+dredge_nflrs_clim_mt <- dredge(nflrs_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", nflrs_clim_fixed), trace = 2, m.lim = c(0,20),
+                               subset = nflrs_subset)[1:100,]
 nflrs_clim_mt_best_mod <- update(get.models(dredge_nflrs_clim_mt, subset = 1)[[1]], nAGQ = 1)
 nflrs_output <- list(nflrs_dredge_clim_mt = as.data.frame(dredge_nflrs_clim_mt[1:20,]),
                       nflrs_clim_mt_best_mod = nflrs_clim_mt_best_mod)
