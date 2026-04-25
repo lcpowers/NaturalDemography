@@ -30,8 +30,7 @@ mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","e
 # --------------
 # Clim models
 ```{r clim_global_models}
-clim_pred_vars <- c("log_size_t0*(pop_slp +  win_meanT_mean + I(win_meanT_mean^2) + win_meanT_range + I(win_meanT_range^2) +
-                                gs_meanT_mean + I(gs_meanT_mean^2) + gs_meanT_range + I(gs_meanT_range^2)) + (1|pop.set.year)")
+clim_pred_vars <- c("log_size_t0*(pop_slp + win_meanT_mean + I(win_meanT_mean^2) + gs_meanT_mean + I(gs_meanT_mean^2) + win_meanT_range +  gs_meanT_range) + (1|pop.set.year)")
 
 surv_clim_formula <- as.formula(paste0("surv ~ ",clim_pred_vars))
 surv_clim_mod <- glmer(surv_clim_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
@@ -115,10 +114,25 @@ saveRDS(clim_model_list, paste0("best_models/best_clim_mods_", Sys.Date(), ".RDS
 # --------------
 # Microtopo variable winnowing: add each MT var to best clim model, compare AICc
 ```{r mt_var_screening}
+all_clim_terms <- c(clim_vars, "I(gs_meanT_mean^2)","I(win_meanT_mean^2)")
+surv_clim_fixed <- intersect(attr(terms(surv_clim_best_mod), "term.labels"), all_clim_terms)
+growth_clim_fixed <- intersect(attr(terms(growth_clim_best_mod), "term.labels"), all_clim_terms)
+repro_clim_fixed <- intersect(attr(terms(repro_clim_best_mod), "term.labels"), all_clim_terms)
+nflrs_clim_fixed <- intersect(attr(terms(nflrs_clim_best_mod), "term.labels"), all_clim_terms)
+growth_var_clim_fixed <- intersect(attr(terms(growth_var_clim_best_mod), "term.labels"), all_clim_terms)
+
 # survival
-surv_base <- update(surv_clim_best_mod, nAGQ = 0)
+surv_base <-  as.formula(paste0("surv ~ log_size_t0 * (pop_slp + nrt_25 + I(nrt_25^2) + est_25 + I(est_25^2) + ",paste(surv_clim_fixed,collapse = "+"),")"),
+                         paste0("(",paste(surv_clim_fixed,collapse = "+"),")*(nrt_25 + I(nrt_25^2) + est_25 + I(est_25^2))")
+                         )
+surv_base
 base_AICc <- AICc(surv_base) %>% round(., 2)
+
+
 for (mt_var in mt_vars) {
+  
+
+  
   mod_new <- update(surv_base, as.formula(paste(". ~ . +", mt_var)))
   new_AICc <- AICc(mod_new) %>% round(., 2)
   cat(paste(c(mt_var, "new:", new_AICc, "base:", base_AICc, "\n")))
@@ -165,12 +179,7 @@ nflrs_mt_vars <- c("tri_25","tpi_25")
 # --------------
 # Combined clim + MT global models
 ```{r clim_mt_global_models}
-all_clim_terms <- c(clim_vars, paste0("I(", clim_vars, "^2)"))
-surv_clim_fixed <- intersect(attr(terms(surv_clim_best_mod), "term.labels"), all_clim_terms)
-growth_clim_fixed <- intersect(attr(terms(growth_clim_best_mod), "term.labels"), all_clim_terms)
-repro_clim_fixed <- intersect(attr(terms(repro_clim_best_mod), "term.labels"), all_clim_terms)
-nflrs_clim_fixed <- intersect(attr(terms(nflrs_clim_best_mod), "term.labels"), all_clim_terms)
-growth_var_clim_fixed <- intersect(attr(terms(growth_var_clim_best_mod), "term.labels"), all_clim_terms)
+
 
 surv_clim_mt_formula <- as.formula(paste(
   "surv ~ log_size_t0 * (pop_slp + ",
