@@ -867,7 +867,7 @@ all_climate <- bind_rows(
          year = year(date),
          clim_year = ifelse(month %in% c(9, 10, 11, 12), year + 1, year),
          winter = month %in% c(11, 12, 1, 2, 3),
-         grwszn = month %in% c(5, 6, 7,8))
+         grwszn = month %in% c(5, 6, 7))
 
 gdd_basetemp <- 12
 cdd_basetemp <- -10
