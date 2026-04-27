@@ -108,6 +108,7 @@ mod_data <- list(
 )
 
 saveRDS(mod_data, "mod_data/all_mod_data.rds")
+mean(surv_mod_data_scaled$gs_meanT_mean)
 ```
 
 ```{r save_scale_params}
