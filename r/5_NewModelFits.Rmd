@@ -9,7 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-# rm(list=ls())
+rm(list=ls())
 library(tidyverse)
 library(lme4)
 library(MuMIn)
@@ -25,12 +25,14 @@ clim_vars <- names(clim)[!names(clim) %in% c("site", "pop", "year")]
 
 microtopo <- read_csv("mod_data/microtopo/model_microtopo_25cm.csv",col_types = cols(plantID=col_character()))
 mt_vars <- names(microtopo)[!names(microtopo) %in% c("site", "pop", "plantID","elv_pt","aspect.cat","pop_slp")]
+
+surv_mod_data %>% select(all_of(clim_vars),pop_slp) %>% cor() %>% corrplot::corrplot(method="number")
 ```
 
 # --------------
 # Clim models
 ```{r clim_global_models}
-clim_pred_vars <- c("log_size_t0*(pop_slp + win_meanT_mean + I(win_meanT_mean^2) + gs_meanT_mean + I(gs_meanT_mean^2) + win_meanT_range +  gs_meanT_range) + (1|pop.set.year)")
+clim_pred_vars <- c("log_size_t0*(win_meanT_mean + I(win_meanT_mean^2) + gs_meanT_mean + I(gs_meanT_mean^2) + win_meanT_range +  gs_meanT_range) + (1|pop.set.year)")
 
 surv_clim_formula <- as.formula(paste0("surv ~ ",clim_pred_vars))
 surv_clim_mod <- glmer(surv_clim_formula, family = binomial, data = surv_mod_data_scaled, nAGQ = 0)
@@ -67,7 +69,7 @@ stopCluster(clust)
 
 ```{r clim_model_selection}
 surv_clim_best_mod <- update(get.models(dredge_surv_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
-growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 1)[[1]] # simpler and I need that
+growth_clim_best_mod <- get.models(dredge_growth_clim, subset = 1)[[1]] #
 repro_clim_best_mod <- update(get.models(dredge_repro_clim, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
 nflrs_clim_best_mod <- update(get.models(dredge_nflrs_clim, subset = 1)[[1]], nAGQ = 1)
 ```
@@ -120,9 +122,8 @@ growth_clim_fixed <- intersect(attr(terms(growth_clim_best_mod), "term.labels"),
 repro_clim_fixed <- intersect(attr(terms(repro_clim_best_mod), "term.labels"), all_clim_terms)
 nflrs_clim_fixed <- intersect(attr(terms(nflrs_clim_best_mod), "term.labels"), all_clim_terms)
 growth_var_clim_fixed <- intersect(attr(terms(growth_var_clim_best_mod), "term.labels"), all_clim_terms)
-
 # nrt_25 and est_25 are included by default in the next phase, so skip them here
-screen_mt_vars <- setdiff(mt_vars, c("nrt_25", "est_25"))
+screen_mt_vars <- c(setdiff(mt_vars, c("nrt_25", "est_25")),"pop_slp")
 
 # survival
 surv_base <- update(surv_clim_best_mod, nAGQ = 0)
@@ -163,7 +164,7 @@ for (mt_var in screen_mt_vars) {
 # Set MT vars per vital rate based on screening results above
 surv_mt_vars <- c("tpi_25")
 growth_mt_vars <- c("tri_25")
-# repro_mt_vars <- # c("est_25","prcv_25") # none
+repro_mt_vars <-  # none
 nflrs_mt_vars <- c("tpi_25") # tri, plcv also possible, in that order
 ```
 
@@ -171,12 +172,12 @@ nflrs_mt_vars <- c("tpi_25") # tri, plcv also possible, in that order
 # Combined clim + MT global models
 ```{r clim_mt_global_models}
 surv_clim_mt_formula <- as.formula(paste0(
-  "surv ~ log_size_t0 * (pop_slp + ", paste(c(surv_clim_fixed, surv_mt_vars), collapse = " + "),
-  " + nrt_25 + est_25)",
+  "surv ~ log_size_t0 * (", paste(c(surv_clim_fixed, surv_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25 + pop_slp)",
   " + (", paste(surv_clim_fixed, collapse = " + "), ")",
   " * (", paste(surv_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
   " + (nrt_25 + est_25)",
-  " * (", paste(surv_mt_vars, collapse = " + "), ")",
+  " * (", paste(c(surv_mt_vars,"pop_slp"), collapse = " + "), ")",
   " + (1|pop.set.year)"
 ))
 surv_clim_mt_formula
@@ -184,41 +185,44 @@ surv_clim_mt_mod <- glmer(surv_clim_mt_formula, family = binomial, data = surv_m
 length(attr(terms(surv_clim_mt_mod), "term.labels"))
 
 growth_clim_mt_formula <- as.formula(paste0(
-  "growth ~ log_size_t0 * (pop_slp + ", paste(c(growth_clim_fixed, growth_mt_vars), collapse = " + "),
-  " + nrt_25 + est_25)",
+  "growth ~ log_size_t0 * (", paste(c(growth_clim_fixed, growth_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25 + pop_slp)",
   " + (", paste(growth_clim_fixed, collapse = " + "), ")",
   " * (", paste(growth_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
   " + (nrt_25 + est_25)",
-  " * (", paste(growth_mt_vars, collapse = " + "), ")",
+  " * (", paste(c(growth_mt_vars,"pop_slp"), collapse = " + "), ")",
   " + (1|pop.set.year)"
 ))
+growth_clim_mt_formula
 growth_clim_mt_mod <- lmer(growth_clim_mt_formula, data = growth_mod_data_scaled, REML = FALSE)
 length(attr(terms(growth_clim_mt_mod), "term.labels"))
 
 repro_clim_mt_formula <- as.formula(paste0(
-  "flowered ~ log_size_t0 * (pop_slp + ", paste(repro_clim_fixed, collapse = " + "),
-  " + nrt_25 + est_25)",
+  "flowered ~ log_size_t0 * (", paste(repro_clim_fixed, collapse = " + "),
+  " + nrt_25 + est_25 + pop_slp)",
   " + (", paste(repro_clim_fixed, collapse = " + "), ")",
-  " * (nrt_25 + est_25)",
+  " * (nrt_25 + est_25) + (nrt_25 + est_25) * pop_slp",
   " + (1|pop.set.year)"
 ))
+repro_clim_mt_formula
 repro_clim_mt_mod <- glmer(repro_clim_mt_formula, family = binomial, data = repro_mod_data_scaled, nAGQ = 0)
 length(attr(terms(repro_clim_mt_mod), "term.labels"))
 
 nflrs_clim_mt_formula <- as.formula(paste0(
-  "total_flrs ~ log_size_t0 * (pop_slp + ", paste(c(nflrs_clim_fixed, nflrs_mt_vars), collapse = " + "),
-  " + nrt_25 + est_25)",
+  "total_flrs ~ log_size_t0 * (", paste(c(nflrs_clim_fixed, nflrs_mt_vars), collapse = " + "),
+  " + nrt_25 + est_25 + pop_slp)",
   " + (", paste(nflrs_clim_fixed, collapse = " + "), ")",
   " * (", paste(nflrs_mt_vars, collapse = " + "), " + nrt_25 + est_25)",
   " + (nrt_25 + est_25)",
-  " * (", paste(nflrs_mt_vars, collapse = " + "), ")",
+  " * (", paste(c(nflrs_mt_vars,"pop_slp"), collapse = " + "), ")",
   " + (1|pop.set.year)"
 ))
+nflrs_clim_mt_formula
 nflrs_clim_mt_mod <- glmer.nb(nflrs_clim_mt_formula, data = nflrs_mod_data_scaled, nAGQ = 0)
 length(attr(terms(nflrs_clim_mt_mod), "term.labels"))
 ```
 
-# Started surv @ 12:25 April 25
+# Started surv @ 14:19 April 26
 ```{r clim_mt_dredge}
 clust <- makeCluster(50, type = "FORK")
 
@@ -229,21 +233,21 @@ quad_pairs <- list(c("gs_meanT_mean", "I(gs_meanT_mean^2)"),
 # linear + quadratic clim interactions must enter/leave together.
 # MuMIn canonicalizes interaction term names case-insensitive alphabetically,
 # so each interaction's components are sorted by tolower() before joining.
-# surv_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% surv_clim_fixed))]
-# surv_interactors <- c("log_size_t0", "nrt_25", "est_25", surv_mt_vars)
-# surv_subset <- parse(text = paste(c("TRUE", unlist(lapply(surv_quad_pairs, function(p)
-#   sapply(surv_interactors, function(i) {
-#     lin <- if (tolower(p[1]) < tolower(i)) paste(p[1], i, sep = ":") else paste(i, p[1], sep = ":")
-#     qd  <- if (tolower(p[2]) < tolower(i)) paste(p[2], i, sep = ":") else paste(i, p[2], sep = ":")
-#     paste0("`", lin, "` == `", qd, "`")
-#   })
-# ))), collapse = " & "))
-# dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2, m.lim = c(0,20),
-#                               subset = surv_subset)[1:100,]
-# surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
-# surv_output <- list(surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt[1:20,]),
-#                     surv_clim_mt_best_mod = surv_clim_mt_best_mod)
-# saveRDS(surv_output, paste0("output/singleModelOutput/surv_clim_mt_", Sys.Date(), ".RDS"))
+surv_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% surv_clim_fixed))]
+surv_interactors <- c("log_size_t0", "nrt_25", "est_25", surv_mt_vars)
+surv_subset <- parse(text = paste(c("TRUE", unlist(lapply(surv_quad_pairs, function(p)
+  sapply(surv_interactors, function(i) {
+    lin <- if (tolower(p[1]) < tolower(i)) paste(p[1], i, sep = ":") else paste(i, p[1], sep = ":")
+    qd  <- if (tolower(p[2]) < tolower(i)) paste(p[2], i, sep = ":") else paste(i, p[2], sep = ":")
+    paste0("`", lin, "` == `", qd, "`")
+  })
+))), collapse = " & "))
+dredge_surv_clim_mt <- dredge(surv_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", surv_clim_fixed), trace = 2, m.lim = c(0,25),
+                              subset = surv_subset)[1:100,]
+surv_clim_mt_best_mod <- update(get.models(dredge_surv_clim_mt, subset = 1)[[1]], nAGQ = 1,control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
+surv_output <- list(surv_dredge_clim_mt = as.data.frame(dredge_surv_clim_mt[1:20,]),
+                    surv_clim_mt_best_mod = surv_clim_mt_best_mod)
+saveRDS(surv_output, paste0("output/singleModelOutput/surv_clim_mt_", Sys.Date(), ".RDS"))
 
 growth_quad_pairs <- quad_pairs[sapply(quad_pairs, function(p) all(p %in% growth_clim_fixed))]
 growth_interactors <- c("log_size_t0", "nrt_25", "est_25", growth_mt_vars)
@@ -254,7 +258,7 @@ growth_subset <- parse(text = paste(c("TRUE", unlist(lapply(growth_quad_pairs, f
     paste0("`", lin, "` == `", qd, "`")
   })
 ))), collapse = " & "))
-dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2, m.lim = c(0,20),
+dredge_growth_clim_mt <- dredge(growth_clim_mt_mod, cluster = clust, fixed = c("log_size_t0", growth_clim_fixed), trace = 2, m.lim = c(0,30),
                                 subset = growth_subset)[1:100,]
 growth_clim_mt_best_mod <- get.models(dredge_growth_clim_mt, subset = 1)[[1]]
 growth_output <- list(growth_dredge_clim_mt = as.data.frame(dredge_growth_clim_mt[1:20,]),
